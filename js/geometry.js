@@ -1,7 +1,7 @@
 // Three.js geometry & mesh builders for blocks.
-import * as THREE from './vendor/three.module.min.js?v=20261107-1';
-import { CAT_COLORS, THRUSTER_TYPES } from './data.js?v=20261107-1';
-import { ROTS, rotatedSize } from './rotations.js?v=20261107-1';
+import * as THREE from './vendor/three.module.min.js?v=20261107-2';
+import { CAT_COLORS, THRUSTER_TYPES } from './data.js?v=20261107-2';
+import { ROTS, rotatedSize } from './rotations.js?v=20261107-2';
 
 const h = 0.5;
 // Convex polyhedron from vertex list + faces (any winding — fixed automatically).
@@ -155,6 +155,13 @@ export function buildBlockObject(def, b, cell, { ghost = false, ghostOk = true }
     const box = cached('box', SHAPES.cube);
     const body = new THREE.Mesh(box, m); body.scale.set(sx * 0.9, sy * 0.6, sz * 0.9); body.position.y = sy * 0.2; inner.add(body); addEdges(box, body);
     const pad = new THREE.Mesh(box, ghost ? m : mat(0xe3b341)); pad.scale.set(sx * 0.95, sy * 0.15, sz * 0.95); pad.position.y = -sy / 2 + sy * 0.075; inner.add(pad);
+  } else if (shape === 'module') {
+    const box = cached('box', SHAPES.cube);
+    const body = new THREE.Mesh(box, m); body.scale.set(sx * 0.9, sy * 0.9, sz * 0.98); inner.add(body); addEdges(box, body);
+    if (!ghost) for (const z of [-sz / 4, sz / 4]) {
+      const led = new THREE.Mesh(box, mat(0x56d364, { emissive: 0x56d364, emissiveIntensity: 0.9 }));
+      led.scale.set(sx * 0.2, sy * 0.2, sz * 0.12); led.position.set(sx * 0.46, sy * 0.25, z); inner.add(led);
+    }
   } else if (shape === 'tank') {
     const box = cached('box', SHAPES.cube);
     const cg = cached('cyl', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 24));

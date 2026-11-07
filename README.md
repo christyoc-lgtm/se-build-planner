@@ -67,6 +67,16 @@ Free ports on nearby blocks show in blue (large) and cyan (small). The left pane
 - **Repaint…:** recolours every block, the selection, a layer, a block type, or every block of one colour.
 - **New blocks:** half blocks, 2:1 slopes and panels (light and heavy); gatling, rocket, interior, assault-cannon and autocannon turrets; gatling gun and rocket launcher; warhead and decoy; solar panels; wheel suspensions with wheels; parachute hatches; artificial mass; laser antenna; ore detector; Prototech jump drive; passenger seat; LCD; air vent; oxygen farm; cryo chamber.
 
+## Production
+
+There are blocks for the **Basic Refinery**, **Basic Assembler**, **Survival Kit**, **Refinery** and **Assembler**, plus the three **upgrade modules** (Speed, Yield, Power Efficiency). The **Production** panel lists every production block with the modules touching it. For each it shows:
+
+- **Speed:** +100% per Speed module.
+- **Yield:** ×1.19 per Yield module, up to 200% with four; Refineries only.
+- **Power:** Speed modules double the power use each, and each Power Efficiency module cuts it to ×0.67.
+
+It also gives the total power with all production running, and warns about modules that aren't touching anything or have no effect (a Yield module on an Assembler, or more than 4 on one block).
+
 ## Flight analysis
 
 - **Speed & stopping:** for each direction, the time and distance to the speed cap and the stopping distance (using the opposite thrusters), plus climb and descent. Landing advice gives the fastest safe descent speed from 50, 100, 250, 500 and 1,000 m.

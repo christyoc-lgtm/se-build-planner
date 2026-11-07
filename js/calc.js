@@ -1,6 +1,6 @@
 // Pure calculation engine: mass, cargo, gravity, thrust per direction.
-import { G0, BLOCKS, DIRS, ITEMS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-1';
-import { applyRot, rotatedSize } from './rotations.js?v=20261107-1';
+import { G0, BLOCKS, DIRS, ITEMS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-2';
+import { applyRot, rotatedSize } from './rotations.js?v=20261107-2';
 
 /** Resolve a block definition, applying custom blocks and per-design overrides. */
 export function getDef(design, id) {
@@ -202,3 +202,52 @@ export const fmt = {
 };
 
 export { THRUSTER_TYPES };
+
+/**
+ * Production blocks & upgrade modules.
+ * A module counts as attached to the refinery/assembler it touches most (2 attachment points per module,
+ * max 8 points per block). Speed +50 %/point (more power), Yield ×2^(1/8)/point (refineries only, 200 % at 8),
+ * Power efficiency ×1.2228/point (less power).
+ */
+export function productionAnalysis(design) {
+  const cellOwner = new Map();
+  const prods = [], mods = [];
+  for (const b of design.blocks) {
+    const def = getDef(design, b.id); if (!def) continue;
+    if (def.prod) {
+      const ws = rotatedSize(b.r, def.size);
+      prods.push({ b, def, pts: { speed: 0, yield: 0, power: 0 }, modules: [] });
+      for (let x = 0; x < ws[0]; x++) for (let y = 0; y < ws[1]; y++) for (let z = 0; z < ws[2]; z++)
+        cellOwner.set(`${b.p[0] + x},${b.p[1] + y},${b.p[2] + z}`, prods.length - 1);
+    } else if (def.module) mods.push({ b, def });
+  }
+  const loose = [], wasted = [];
+  for (const m of mods) {
+    const ws = rotatedSize(m.b.r, m.def.size);
+    const touch = new Map();
+    for (let x = 0; x < ws[0]; x++) for (let y = 0; y < ws[1]; y++) for (let z = 0; z < ws[2]; z++)
+      for (const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
+        const k = `${m.b.p[0] + x + d[0]},${m.b.p[1] + y + d[1]},${m.b.p[2] + z + d[2]}`;
+        if (cellOwner.has(k)) { const i = cellOwner.get(k); touch.set(i, (touch.get(i) || 0) + 1); }
+      }
+    const cands = [...touch.entries()].filter(([i]) => prods[i].def.prod.modules).sort((a, b) => b[1] - a[1]);
+    if (!cands.length) { loose.push(m); continue; }
+    const p = prods[cands[0][0]];
+    const used = p.pts.speed + p.pts.yield + p.pts.power;
+    if (used >= 8) { wasted.push(m); continue; }
+    if (m.def.module === 'yield' && p.def.prod.kind !== 'refinery') { p.modules.push(m); wasted.push(m); continue; }
+    p.pts[m.def.module] += 2; p.modules.push(m);
+  }
+  let totalKw = 0;
+  const rows = prods.map(p => {
+    const { speed, yield: y, power } = p.pts;
+    const speedPct = 100 + 50 * speed;
+    const yieldPct = p.def.prod.kind === 'refinery' ? 100 * Math.pow(2, y / 8) : null;
+    const kw = p.def.prod.kw * (1 + 0.5 * speed) / Math.pow(1.2228445, power);
+    totalKw += kw;
+    return { name: p.def.name, kind: p.def.prod.kind, uid: p.b.uid, canModules: p.def.prod.modules,
+      counts: { speed: speed / 2, yield: y / 2, power: power / 2 }, speedPct, yieldPct, kw,
+      rate: p.def.prod.base * speedPct / 100 };
+  });
+  return { rows, totalKw, loose, wasted, modules: mods.length };
+}

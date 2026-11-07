@@ -3,10 +3,10 @@
 // "spine", then adds thrusters on the outer surfaces in every direction until each
 // direction meets its target, adds batteries to power them, and checks that the
 // hydrogen thrusters are plumbed to the tank and the tank to the connector.
-import { BLOCKS, faceCentreCell } from './data.js?v=20261107-1';
-import { ROTS, applyRot, rotatedSize } from './rotations.js?v=20261107-1';
-import { analyse } from './calc.js?v=20261107-1';
-import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-1';
+import { BLOCKS, faceCentreCell } from './data.js?v=20261107-2';
+import { ROTS, applyRot, rotatedSize } from './rotations.js?v=20261107-2';
+import { analyse } from './calc.js?v=20261107-2';
+import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-2';
 
 const ck = c => c.join(',');
 const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];

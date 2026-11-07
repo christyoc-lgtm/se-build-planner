@@ -199,8 +199,14 @@ B('Drill',     'Drill',                  'tools', 'box', { s:[1,1,3], m:6741, in
 B('Welder',    'Welder',                 'tools', 'box', { s:[1,1,2], m:713.4, approx:1 },  { s:[3,3,6], m:473.4, approx:1 });
 B('Grinder',   'Grinder',                'tools', 'box', { s:[1,1,2], m:761.4, approx:1 },  { s:[3,3,6], m:513.4, approx:1 });
 B('Collector', 'Collector',              'tools', 'box', { s:[1,1,1], m:1474, inv:6250, minor:1 }, { s:[3,3,3], m:1237.6, inv:1675, minor:1 });
-B('Refinery',  'Refinery',               'tools', 'box', { s:[2,4,2], m:25208, approx:1 },  null);
-B('Assembler', 'Assembler',              'tools', 'box', { s:[1,1,2], m:3560, approx:1 },   null);
+B('Refinery',  'Refinery',               'tools', 'box', { s:[2,4,2], m:25328, prod:{ kind:'refinery', kw:560, base:1.3, modules:true }, invOre:7500 }, null);
+B('BasicRefinery','Basic Refinery',      'tools', 'box', { s:[1,2,1], m:2802, prod:{ kind:'refinery', kw:330, base:0.65, modules:false }, invOre:4000 }, null);
+B('Assembler', 'Assembler',              'tools', 'box', { s:[1,1,2], m:4092, prod:{ kind:'assembler', kw:560, base:1, modules:true } }, null);
+B('BasicAssembler','Basic Assembler',    'tools', 'box', { s:[1,1,1], m:2208, prod:{ kind:'assembler', kw:280, base:0.5, modules:false } }, null);
+B('SurvivalKit','Survival Kit',          'tools', 'box', { s:[1,1,1], m:1171, prod:{ kind:'kit', kw:200, base:0.3, modules:false } }, { s:[3,4,3], m:691, prod:{ kind:'kit', kw:200, base:0.3, modules:false }, approx:1 });
+B('SpeedModule','Speed Module',          'tools', 'module', { s:[1,1,2], m:2508, module:'speed' }, null);
+B('YieldModule','Yield Module',          'tools', 'module', { s:[1,1,2], m:2856, module:'yield' }, null);
+B('PowerModule','Power Efficiency Module','tools','module', { s:[1,1,2], m:2996, module:'power' }, null);
 B('Medical',   'Medical Room',           'tools', 'box', { s:[2,1,2], m:4257, approx:1 },   null);
 
 // Weapons ---------------------------------------------------------------------
@@ -279,6 +285,9 @@ const PORTS = {
   Grinder:     { L: ['+zL'], S: ['+zS'] },
   Collector:   { L: ['+zL'], S: ['+zL'] },
   Refinery:    { L: ['-xL@0.0.0', '+xL@1.0.1', '-zL@1.0.0', '+zL@0.0.1'] },
+  BasicRefinery:{ L: ['-zL@0.0.0', '+zL@0.0.0'] },
+  BasicAssembler:{ L: ['+zL'] },
+  SurvivalKit: { L: ['+zL'], S: ['+zL'] },
   Assembler:   { L: ['-zL', '+zL', '-xL@0.0.0', '+xL@0.0.1'] },
   ConvJunc:    { L: ['*L'], S: ['*S'] },
   GatTurret:   { L: ['-yL'], S: ['-yL'] },
@@ -327,7 +336,7 @@ const ROLES = {
   H2Engine: 'h2user', ReactorS: 'reactor', ReactorL: 'reactor',
   CockpitSG: 'cockpit', Fighter: 'cockpit', CockpitLG: 'cockpit',
   Drill: 'drill', Welder: 'welder', Grinder: 'grinder', Collector: 'collector',
-  Refinery: 'refinery', Assembler: 'assembler',
+  Refinery: 'refinery', Assembler: 'assembler', BasicRefinery: 'refinery', BasicAssembler: 'assembler', SurvivalKit: 'assembler',
   GatTurret: 'weapon', RktTurret: 'weapon', AsltTurret: 'weapon', AutoTurret: 'weapon', GatGun: 'weapon', RktLauncher: 'weapon', Parachute: 'chute',
 };
 
@@ -347,7 +356,7 @@ for (const r of RAW) {
       h2: spec.h2 || 0, o2: spec.o2 || 0,
       ports: parsePorts(PORTS[r.key] && PORTS[r.key][grid], spec.s),
       gyro: r.key === 'Gyro' ? (grid === 'L' ? 3.36e7 : 4.48e5) : 0,     // max torque (N·m)
-      jump: spec.jump || null, chute: spec.chute || 0, gear: r.key === 'LandingGear' || r.key.startsWith('Wheel'),
+      jump: spec.jump || null, chute: spec.chute || 0, prod: spec.prod || null, module: spec.module || null, gear: r.key === 'LandingGear' || r.key.startsWith('Wheel'),
       role: ROLES[r.key] || (spec.thrust && spec.thrust.type === 'hydrogen' ? 'h2thrust' : null),
     };
   }

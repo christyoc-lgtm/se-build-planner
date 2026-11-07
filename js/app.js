@@ -1,15 +1,15 @@
 // Space Engineers Build Planner — editor & UI
-import * as THREE from './vendor/three.module.min.js?v=20261107-1';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-1';
-import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-1';
-import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-1';
-import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt } from './calc.js?v=20261107-1';
-import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-1';
-import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-1';
-import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-1';
-import { flightAnalysis, planetOf } from './flight.js?v=20261107-1';
-import { encodeDesign, decodeDesign } from './share.js?v=20261107-1';
-import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-1';
+import * as THREE from './vendor/three.module.min.js?v=20261107-2';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-2';
+import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-2';
+import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-2';
+import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt, productionAnalysis } from './calc.js?v=20261107-2';
+import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-2';
+import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-2';
+import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-2';
+import { flightAnalysis, planetOf } from './flight.js?v=20261107-2';
+import { encodeDesign, decodeDesign } from './share.js?v=20261107-2';
+import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-2';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -294,9 +294,9 @@ function setConveyorView(on) {
   applyConveyorView(); rebuildOverlays();
   const t2 = $('#convToggle2'); if (t2) { t2.textContent = (on ? 'Hide' : 'Show') + ' conveyor view'; t2.classList.toggle('on', on); }
 }
-function focusBlocks(uids) {
+function focusBlocks(uids, { conveyor = true } = {}) {
   if (!uids || !uids.length) return;
-  if (!state.convView) setConveyorView(true);
+  if (conveyor && !state.convView) setConveyorView(true);
   const box = new THREE.Box3();
   for (const u of uids) { const o = objByUid.get(u); if (o) box.expandByObject(o); }
   if (box.isEmpty()) return;
@@ -1217,6 +1217,7 @@ function renderAnalysis() {
 
   // Flight -------------------------------------------------------------------
   try { renderFlight(a, flightAnalysis(d, env, a), env, station); } catch (err) { console.error(err); }
+  renderProduction(productionAnalysis(d), a);
   renderLayers();
 
   // Conveyors ----------------------------------------------------------------
@@ -1248,6 +1249,31 @@ function renderAnalysis() {
     ${a.bom.length ? `<table class="t"><thead><tr><th>Block</th><th>#</th><th>Mass</th><th>Share</th></tr></thead><tbody>${bomRows}</tbody></table>` : '<div class="muted">Nothing placed yet.</div>'}
     ${a.bounds ? `<div class="small muted" style="margin-top:6px">Footprint ${a.bounds.cells.join(' × ')} cells = ${a.bounds.meters.map(v => v.toFixed(1)).join(' × ')} m (W × H × L)</div>` : ''}
     ${a.missing.length ? `<div class="note warn">${a.missing.length} blocks reference unknown definitions and were ignored.</div>` : ''}`;
+}
+
+function renderProduction(P, a) {
+  const el = $('#productionSection'); if (!el) return;
+  if (!P.rows.length && !P.modules) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  const kindName = { refinery: 'refining', assembler: 'assembling', kit: 'stone & basics' };
+  const rows = P.rows.map((r, i) => {
+    const mods = r.canModules
+      ? ['speed', 'yield', 'power'].filter(k => r.counts[k]).map(k => `${r.counts[k]} ${k}`).join(', ') || '<span class="muted">none</span>'
+      : '<span class="muted">no module ports</span>';
+    return `<tr data-prow="${i}" style="cursor:pointer" title="Show this block"><td>${escapeHtml(r.name)}</td><td class="small">${mods}</td>
+      <td>${r.speedPct}%${r.kind === 'refinery' ? `<div class="small muted">rate ×${r.rate.toFixed(2)}</div>` : ''}</td>
+      <td>${r.yieldPct != null ? r.yieldPct.toFixed(0) + '%' : '—'}</td><td>${r.kw >= 1000 ? (r.kw / 1000).toFixed(2) + ' MW' : r.kw.toFixed(0) + ' kW'}</td></tr>`;
+  }).join('');
+  const pOutKw = a.pOut * 1000;
+  el.innerHTML = `<h3>Production</h3>
+    ${P.rows.length ? `<table class="t"><thead><tr><th>Block</th><th>Modules</th><th>Speed</th><th>Yield</th><th>Power</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="kv" style="margin-top:6px"><span class="k">All production running at once</span><span class="v"><b>${P.totalKw >= 1000 ? (P.totalKw / 1000).toFixed(2) + ' MW' : P.totalKw.toFixed(0) + ' kW'}</b></span>
+      <span class="k">Grid power output</span><span class="v">${fmt.num(a.pOut)} MW</span></div>
+    ${pOutKw && P.totalKw > pOutKw ? '<div class="note warn">Production can draw more power than the grid makes, so it will slow down when everything runs together.</div>' : ''}` : ''}
+    ${P.loose.length ? `<div class="note warn">${P.loose.length} upgrade module${P.loose.length > 1 ? 's are' : ' is'} not touching a Refinery or Assembler, so ${P.loose.length > 1 ? 'they do' : 'it does'} nothing. Place modules directly against one (the Refinery takes them on its back, the Assembler on any side).</div>` : ''}
+    ${P.wasted.length ? `<div class="note warn">${P.wasted.length} module${P.wasted.length > 1 ? 's have' : ' has'} no effect: Yield modules only work on Refineries, and each block takes at most 4 modules.</div>` : ''}
+    <div class="small muted" style="margin-top:4px">Each module adds 2 attachment points: Speed +100% speed (and power); Yield ×1.19 ingots (Refinery only, 200% with 4); Power Efficiency ×0.67 power per module. Modules count for the block they touch.</div>`;
+  $$('[data-prow]', el).forEach(tr => tr.onclick = () => focusBlocks([P.rows[+tr.dataset.prow].uid], { conveyor: false }));
 }
 
 function renderConveyorSection(cv) {

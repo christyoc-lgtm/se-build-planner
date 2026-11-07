@@ -3,8 +3,8 @@
 //  - Large ↔ large and small ↔ small connect. Large ↔ small does NOT connect: a Conveyor Converter is needed.
 //  - Gas (hydrogen/oxygen), ore and ingots travel through any connection.
 //    Components and large items only travel through LARGE connections.
-import { getDef } from './calc.js?v=20261107-1';
-import { applyRot, rotatedSize } from './rotations.js?v=20261107-1';
+import { getDef } from './calc.js?v=20261107-2';
+import { applyRot, rotatedSize } from './rotations.js?v=20261107-2';
 
 const ck = (c) => c[0] + ',' + c[1] + ',' + c[2];
 
