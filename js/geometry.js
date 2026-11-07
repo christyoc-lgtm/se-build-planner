@@ -1,7 +1,7 @@
 // Three.js geometry & mesh builders for blocks.
-import * as THREE from './vendor/three.module.min.js?v=20261107-3';
-import { CAT_COLORS, THRUSTER_TYPES } from './data.js?v=20261107-3';
-import { ROTS, rotatedSize } from './rotations.js?v=20261107-3';
+import * as THREE from './vendor/three.module.min.js?v=20261107-5';
+import { CAT_COLORS, THRUSTER_TYPES } from './data.js?v=20261107-5';
+import { ROTS, rotatedSize } from './rotations.js?v=20261107-5';
 
 const h = 0.5;
 // Convex polyhedron from vertex list + faces (any winding — fixed automatically).

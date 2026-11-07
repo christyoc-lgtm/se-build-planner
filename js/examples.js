@@ -3,10 +3,10 @@
 // "spine", then adds thrusters on the outer surfaces in every direction until each
 // direction meets its target, adds batteries to power them, and checks that the
 // hydrogen thrusters are plumbed to the tank and the tank to the connector.
-import { BLOCKS, faceCentreCell } from './data.js?v=20261107-3';
-import { ROTS, applyRot, rotatedSize } from './rotations.js?v=20261107-3';
-import { analyse } from './calc.js?v=20261107-3';
-import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-3';
+import { BLOCKS, faceCentreCell } from './data.js?v=20261107-5';
+import { ROTS, applyRot, rotatedSize } from './rotations.js?v=20261107-5';
+import { analyse } from './calc.js?v=20261107-5';
+import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-5';
 
 const ck = c => c.join(',');
 const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -139,11 +139,14 @@ function buildShip(spec, margin) {
   const X = AX.x, Y = AX.y, Z = AX.z;
 
   // Cockpit at the front
-  if (L) B.attach('CockpitLG', face(0, neg(Z)), neg(Z), { port: 'L' });
-  else {
-    const conv = B.attach('ConvConverter', face(0, neg(Z)), neg(Z), { port: 'L' });
-    const sp = conv && B.portCell(conv, neg(Z));
-    if (sp) B.attach('CockpitSG', sp, neg(Z), { port: 'S' });
+  if (L) {
+    // large-grid cockpit has its conveyor port underneath: sit it on the front junction, facing forward
+    B.attach('CockpitLG', face(0, Y), Y, { port: 'L', rot: 0 });
+  } else {
+    // classic small-grid layout: cockpit's two small back ports -> O2/H2 Generator's two small front ports,
+    // generator's large back port -> the large conveyor spine
+    const gen = B.attach('O2H2Gen', face(0, neg(Z)), neg(Z), { port: 'L', rot: 0 });
+    if (gen) B.tryAdd('CockpitSG', [gen.p[0], gen.p[1], gen.p[2] - 3], 0);
   }
   // Cargo on the sides
   for (const [key, i, side] of spec.cargo) B.attach(key, face(i, side === '+' ? X : neg(X)), side === '+' ? X : neg(X), { port: 'L' });

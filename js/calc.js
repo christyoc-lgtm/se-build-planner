@@ -1,6 +1,6 @@
 // Pure calculation engine: mass, cargo, gravity, thrust per direction.
-import { G0, BLOCKS, DIRS, ITEMS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-3';
-import { applyRot, rotatedSize } from './rotations.js?v=20261107-3';
+import { G0, BLOCKS, DIRS, ITEMS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-5';
+import { applyRot, rotatedSize } from './rotations.js?v=20261107-5';
 
 /** Resolve a block definition, applying custom blocks and per-design overrides. */
 export function getDef(design, id) {

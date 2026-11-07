@@ -25,7 +25,7 @@ The **Conveyor systems** panel checks that:
 - inventory blocks are on the main cargo system
 - blocks that move components (assembler, welder, grinder, connector) have a route made entirely of large conveyors
 
-Gas, ore and ingots pass through small conveyors, but components don't. Port layouts in `js/data.js` (`PORTS`) are simplified versions of the in-game models.
+Gas, ore and ingots pass through small conveyors, but components don't. Port positions are in `js/data.js` (`PORTS`), with a comment on each block. They follow the wiki descriptions, and in-game checks where the wiki is vague (for example, the Refinery has ports on its right and left sides at the bottom-back, on top at the back-right, and underneath at the back-left). A few positions are still approximate (Basic Refinery, Basic Assembler, cockpits, the small-grid Survival Kit); if a port doesn't match the game, edit that line.
 
 ## Example ships
 
@@ -125,6 +125,12 @@ The ship's **Forward is −Z** (red arrow) and **Up is +Y** (green). A thruster 
 ## Data
 
 The block and thruster stats are in `js/data.js`. They come from spaceengineers.wiki.gg (block infoboxes and the Thruster Comparison table) and from 343N/spaceengineers-thrust-calc. Blocks marked ≈ use older game data and may be slightly off. You can override a block's mass, thrust or inventory per design (Pick tool, then click a block), or add modded blocks with **+ Custom**.
+
+### Custom blocks: ports and module slots
+In **+ Custom**, set the size (wide × tall × long), then in *Conveyor ports & module slots* pick a face, pick Large port / Small port / Module slot, and tap or drag across cells. Cells are numbered **row × column as seen from outside that face**, row 1 at the bottom (on Top/Bottom, the front edge is at the top of the grid); the edges of the grid are labelled. You can also type them, e.g. `Left 1x2 L; Top 2x1 S; Back 1x1 M`. Set *Modules* to make the block a refinery/assembler-type block that accepts modules, or a speed/yield/power module itself. *Start from* lets you edit one of your custom blocks or start from a copy of any game block; the ✎ next to a custom block in the list opens it again.
+
+### Phones and tablets
+Below ~820 px wide the side panels become drawers opened from the bar at the bottom (Blocks, Tools, Build, Analysis). One finger orbits, two fingers pan and zoom. Tap once to preview a block with its ports, rotate it with the toolbar arrows if needed, then tap the same spot again or press ✓ Place. In Select mode each tap adds or removes a block from the selection; the Copy / Delete / Mirror buttons are under Tools. Shift-drag box fill and area select need a mouse.
 
 Thruster effectiveness against air density (0 = vacuum, 1 = Earth sea level):
 

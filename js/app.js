@@ -1,15 +1,16 @@
 // Space Engineers Build Planner — editor & UI
-import * as THREE from './vendor/three.module.min.js?v=20261107-3';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-3';
-import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-3';
-import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-3';
-import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt, productionAnalysis, upgradeLinks } from './calc.js?v=20261107-3';
-import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-3';
-import { analyseConveyors, worldPorts, worldUpgradePoints } from './conveyor.js?v=20261107-3';
-import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-3';
-import { flightAnalysis, planetOf } from './flight.js?v=20261107-3';
-import { encodeDesign, decodeDesign } from './share.js?v=20261107-3';
-import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-3';
+import * as THREE from './vendor/three.module.min.js?v=20261107-5';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-5';
+import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-5';
+import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-5';
+import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt, productionAnalysis, upgradeLinks } from './calc.js?v=20261107-5';
+import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-5';
+import { analyseConveyors, worldPorts, worldUpgradePoints } from './conveyor.js?v=20261107-5';
+import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-5';
+import { flightAnalysis, planetOf } from './flight.js?v=20261107-5';
+import { encodeDesign, decodeDesign } from './share.js?v=20261107-5';
+import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-5';
+import { initBlockEditor } from './blockeditor.js?v=20261107-5';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -288,6 +289,7 @@ function rebuildConveyorOverlay() {
 }
 function setConveyorView(on) {
   state.convView = on;
+  document.body.classList.toggle('conv', on);
   $('#btnConv').classList.toggle('on', on);
   $('#legendNormal').style.display = on ? 'none' : '';
   $('#legendConv').style.display = on ? '' : 'none';
@@ -888,24 +890,55 @@ function boxFillList(start, h) {
 }
 
 let downPos = null;
+// Touch: there is no hover, so the first tap previews the block (ports and all) and a
+// second tap on the same spot, or the ✓ Place button, places it.
+let touchPending = null;   // { key, h }
+const isTouch = e => e.pointerType === 'touch' || e.pointerType === 'pen';
+const touchKey = h => h ? targetCell(h).join() + '|' + h.normal.join() : '';
+function setTouchPending(tp) {
+  touchPending = tp;
+  $('#touchBar').hidden = !tp;
+  if (tp) { hover = tp.h; showGhost(tp.h); updateHoverInfo(tp.h); }
+}
 canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   downPos = [e.clientX, e.clientY];
+  if (isTouch(e)) return;    // touch drags orbit the camera; taps are handled on pointerup
   if (state.tool === 'select') { const h = pick(e); if (h) { selDrag = { start: selCellOf(h), moved: false }; canvas.setPointerCapture(e.pointerId); } return; }
   if (state.tool === 'place' && e.shiftKey) { const h = pick(e); if (h) { fillStart = h; canvas.setPointerCapture(e.pointerId); } }
 });
 canvas.addEventListener('pointermove', e => {
+  if (isTouch(e)) return;
   hover = pick(e);
   if (selDrag && downPos && Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5) selDrag.moved = true;
   showGhost(hover);
   updateHoverInfo(hover);
 });
-canvas.addEventListener('pointerleave', () => { ghostGroup.clear(); $('#hoverInfo').style.display = 'none'; });
+canvas.addEventListener('pointerleave', e => { if (isTouch(e) || touchPending) return; ghostGroup.clear(); $('#hoverInfo').style.display = 'none'; });
 canvas.addEventListener('pointerup', e => {
   if (e.button !== 0 || !downPos) return;
-  const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5;
+  const touch = isTouch(e);
+  const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > (touch ? 12 : 5);
   downPos = null;
   const h = pick(e);
+  if (touch) {
+    if (moved) { if (touchPending) showGhost(touchPending.h); return; }
+    if ((state.tool === 'place' || state.tool === 'paste') && h) {
+      const k = touchKey(h);
+      if (touchPending && touchPending.key === k) { confirmTouch(); return; }
+      setTouchPending({ key: k, h }); return;
+    }
+    setTouchPending(null);
+    hover = h; updateHoverInfo(h);
+    if (!h) { if (state.tool === 'select') setSelection([]); return; }
+    if (state.tool === 'select') { if (h.kind === 'block') clickSelect(h.uid, true); showGhost(h); return; }
+    if (h.kind === 'block') {
+      if (state.tool === 'erase') eraseAt(h);
+      else if (state.tool === 'paint') paintAt(h);
+      else if (state.tool === 'pick') pickAt(h);
+    }
+    return;
+  }
   if (state.tool === 'select' && selDrag) {
     const sd = selDrag; selDrag = null;
     if (sd.moved && h) areaSelect(sd.start, selCellOf(h), e.shiftKey);
@@ -924,6 +957,35 @@ canvas.addEventListener('pointerup', e => {
   }
   showGhost(pick(e));
 });
+function confirmTouch() {
+  if (!touchPending) return;
+  const h = touchPending.h; setTouchPending(null);
+  if (state.tool === 'paste') pasteAt(h);
+  else { const pl = placementAt(h); if (pl) placeBlocks([pl]); else toast('No room there'); }
+  ghostGroup.clear(); hover = null;
+}
+
+// Mobile drawers: the block list / tools slide in from the left, analysis from the right.
+const isMobile = () => matchMedia('(max-width: 820px)').matches;
+function mobileDrawer(which) {
+  if (which === 'blocks' || which === 'tools') setLeftTab(which);
+  const open = isMobile() ? which : null;
+  $('#left').classList.toggle('open', open === 'blocks' || open === 'tools');
+  $('#right').classList.toggle('open', open === 'right');
+  document.body.classList.toggle('drawer', !!open);
+  $$('#mobileNav button').forEach(b => b.classList.toggle('on', (b.dataset.drawer || null) === (open || null)));
+}
+function initMobile() {
+  $('#mobileNav').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const w = b.dataset.drawer || null;
+    mobileDrawer(b.classList.contains('on') ? null : w);
+  };
+  $('#scrim').onclick = () => mobileDrawer(null);
+  $('#touchPlace').onclick = confirmTouch;
+  $('#touchCancel').onclick = () => { setTouchPending(null); ghostGroup.clear(); };
+  matchMedia('(max-width: 820px)').addEventListener('change', () => mobileDrawer(null));
+}
 
 function updateHoverInfo(h) {
   const el = $('#hoverInfo');
@@ -1054,10 +1116,11 @@ function paletteItem(d) {
   const col = '#' + blockColor(d).toString(16).padStart(6, '0');
   const meta = d.thrust ? fmt.N(d.thrust.f) : d.inv ? fmt.L(d.inv) : fmt.kg(d.mass);
   const on = favs.has(d.id);
-  it.innerHTML = `<span class="sw" style="background:${col}"></span><span>${d.name}${d.approx ? ' <span class="muted">≈</span>' : ''}</span><span class="meta">${d.size.join('×')} · ${meta}</span><span class="fav ${on ? 'on' : ''}" title="${on ? 'Remove from' : 'Add to'} favourites">${on ? '★' : '☆'}</span>`;
+  it.innerHTML = `<span class="sw" style="background:${col}"></span><span>${d.name}${d.approx ? ' <span class="muted">≈</span>' : ''}${d.custom ? ' <span class="edit" title="Edit this custom block (ports, module slots…)">✎</span>' : ''}</span><span class="meta">${d.size.join('×')} · ${meta}</span><span class="fav ${on ? 'on' : ''}" title="${on ? 'Remove from' : 'Add to'} favourites">${on ? '★' : '☆'}</span>`;
   it.onclick = e => {
     if (e.target.classList.contains('fav')) { e.stopPropagation(); toggleFav(d.id); return; }
-    selectBlockType(d.id); setTool('place');
+    if (e.target.classList.contains('edit')) { e.stopPropagation(); blockEditor.edit(d.id); return; }
+    selectBlockType(d.id); setTool('place'); mobileDrawer(null);
   };
   return it;
 }
@@ -1103,6 +1166,7 @@ function selectBlockType(id) {
 function setTool(t) {
   if (state.tool === 'paste' && t !== 'paste' && state.pasteIsMove) { state.pasteIsMove = false; }
   state.tool = t;
+  if (touchPending) setTouchPending(null);
   if (t === 'select' || t === 'paste') setLeftTab('tools');
   renderSelectionPanel();
   updateRotLabel();
@@ -1865,6 +1929,7 @@ function buildExample(grid) {
     // Conveyor junctions set into the floor: link the lift thrusters, cargo and tank
     for (let x = -2; x <= 2; x++) { add('ConvJunc', [x, 0, 3]); add('ConvJunc', [x, 0, -3]); }
     for (const z of [-2, -1, 0]) add('ConvJunc', [0, 0, z]);
+    add('ConvJunc', [0, 0, -4]);                                      // under the cockpit (its port is underneath)
     for (let x = -2; x <= 2; x++) for (let z = -4; z <= 4; z++) add('LightArmor', [x, 0, z]);
     add('CargoL', [-1, 1, -1]);
     add('H2Tank', [-1, 1, 2]);               // its front port meets the cargo's back port
@@ -1886,6 +1951,7 @@ function buildExample(grid) {
     // Small conveyors in the floor take ore from the drill to the cargo
     for (let z = -5; z <= 0; z++) add('ConvJunc', [0, 0, z]);
     add('ConvJunc', [0, -1, -5]);
+    for (const p of [[1, 2, -2], [1, 1, -2], [1, 0, -2]]) add('ConvJunc', p);   // cockpit's back ports down to the floor line
     for (let x = -2; x <= 2; x++) for (let z = -5; z <= 5; z++) add('LightArmor', [x, 0, z]);
     add('CockpitSG', [-1, 1, -5]);
     add('CargoM', [-1, 1, -1]);
@@ -1912,31 +1978,30 @@ function buildExample(grid) {
 // ---------------------------------------------------------------------------
 // Custom blocks
 // ---------------------------------------------------------------------------
+let blockEditor = null;
 function initCustomModal() {
-  $('#cbCat').innerHTML = CATEGORIES.map(c => `<option value="${c.id}" ${c.id === 'custom' ? 'selected' : ''}>${c.name}</option>`).join('');
-  $('#cbThrType').innerHTML += Object.entries(THRUSTER_TYPES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
-  $('#btnCustom').onclick = () => { $('#customModal').hidden = false; };
-  $('#cbSave').onclick = () => {
-    const name = $('#cbName').value.trim() || 'Custom block';
-    const grid = state.design.grid;
-    const id = `${grid}_custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
-    const tt = $('#cbThrType').value;
-    const def = {
-      id, key: id, grid, name, cat: $('#cbCat').value, shape: tt ? 'thruster' : 'box', custom: true,
-      size: [+$('#cbX').value || 1, +$('#cbY').value || 1, +$('#cbZ').value || 1], mass: +$('#cbMass').value || 0,
-      inv: +$('#cbInv').value || 0, invOre: 0, invIce: 0, fuelInv: 0, minorInv: false,
-      thrust: tt ? { type: tt, f: +$('#cbForce').value || 0, p: +$('#cbPower').value || 0, h2: +$('#cbH2').value || 0 } : null,
-      pOut: +$('#cbPOut').value || 0, store: 0, h2: +$('#cbH2Cap').value || 0, o2: 0,
-    };
-    const sz = def.size, pv = $('#cbPorts').value;
-    def.ports = parsePorts(pv ? pv.split(' ') : [], sz);
-    def.role = $('#cbRole').value || (tt === 'hydrogen' ? 'h2thrust' : def.h2 ? 'h2tank' : def.inv ? 'cargo' : null);
-    state.design.customBlocks[id] = def;
-    const lib = readJSON(LS_CUSTOM, {}); lib[id] = def; writeJSON(LS_CUSTOM, lib);
-    $('#customModal').hidden = true;
-    selectBlockType(id); setTool('place'); autosave();
-    toast(`Added “${name}”`);
-  };
+  blockEditor = initBlockEditor({
+    getDesign: () => state.design,
+    toast,
+    onSave(def, isUpdate) {
+      state.design.customBlocks[def.id] = def;
+      const lib = readJSON(LS_CUSTOM, {}); lib[def.id] = def; writeJSON(LS_CUSTOM, lib);
+      if (isUpdate) { clearScene(); changed(); }
+      selectBlockType(def.id); setTool('place'); autosave();
+      const np = def.ports.length, nu = def.upgrade.length;
+      toast(`${isUpdate ? 'Updated' : 'Added'} “${def.name}” · ${np} port${np === 1 ? '' : 's'}${nu ? `, ${nu} module slot${nu === 1 ? '' : 's'}` : ''}`);
+    },
+    async onDelete(id) {
+      const used = state.design.blocks.filter(b => b.id === id).length;
+      if (used) { toast(`“${state.design.customBlocks[id].name}” is used by ${used} placed block${used > 1 ? 's' : ''}; erase them first.`); return false; }
+      if (!(await ask(`Delete the custom block “${state.design.customBlocks[id].name}” from this design and your custom library?`, 'Delete'))) return false;
+      delete state.design.customBlocks[id];
+      const lib = readJSON(LS_CUSTOM, {}); delete lib[id]; writeJSON(LS_CUSTOM, lib);
+      if (state.selId === id) state.selId = null;
+      favs.delete(id); renderPalette(); autosave(); return true;
+    },
+  });
+  $('#btnCustom').onclick = () => blockEditor.open();
 }
 
 // ---------------------------------------------------------------------------
@@ -1945,7 +2010,7 @@ function initCustomModal() {
 function init() {
   $$('#leftTabs button').forEach(b => b.onclick = () => setLeftTab(b.dataset.tab));
   setLeftTab((() => { try { return localStorage.getItem(LS_TAB) || 'blocks'; } catch { return 'blocks'; } })());
-  initEnvControls(); initCustomModal();
+  initEnvControls(); initCustomModal(); initMobile();
   $$('#toolSeg button').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $$('[data-rot]').forEach(b => b.onclick = () => {
     if (b.dataset.rot === 'reset') { state.rot = 0; updateRotLabel(); return; }

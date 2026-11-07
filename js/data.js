@@ -171,7 +171,7 @@ B('Connector', 'Connector',              'storage', 'box', { s:[1,1,1], m:3564, 
 B('ConnectorS','Small Connector',        'storage', 'box', null,                               { s:[1,1,1], m:204.8, inv:100, minor:1 });
 B('H2Tank',    'Hydrogen Tank',          'storage', 'tank', { s:[3,3,3], m:8161.6, h2:15000000 }, { s:[5,5,5], m:1580.8, h2:500000 });
 B('H2TankS',   'Small Hydrogen Tank',    'storage', 'tank', { s:[1,2,1], m:3161.6, h2:1000000, approx:1 }, null);
-B('O2Tank',    'Oxygen Tank',            'storage', 'tank', { s:[1,2,1], m:3161.6, o2:100000, approx:1 }, { s:[3,3,3], m:450.6, o2:50000, approx:1 });
+B('O2Tank',    'Oxygen Tank',            'storage', 'tank', { s:[1,2,1], m:3161.6, o2:100000, approx:1 }, { s:[3,3,3], m:641.6, o2:50000, approx:1 });
 B('O2H2Gen',   'O2/H2 Generator',        'storage', 'box', { s:[1,2,1], m:2587, invIce:4000, approx:1 }, { s:[3,3,2], m:298.6, invIce:1000, approx:1 });
 
 // Control & comms -------------------------------------------------------------
@@ -261,42 +261,42 @@ B('Cryo',      'Cryo Chamber',           'misc', 'box', { s:[1,1,1], m:692, appr
 // gyros etc. have no conveyor ports.
 // ---------------------------------------------------------------------------
 const PORTS = {
-  CargoS:      { L: ['*L'], S: ['*S'] },
-  CargoM:      { S: ['-zL', '-xL', '+xL', '+yS', '+zS', '-yS'] },
+  // Cargo ------------------------------------------------------------------------------------------
+  CargoS:      { L: ['*L'], S: ['*S'] },                                   // one port on every side
+  CargoM:      { S: ['-zL', '-xL', '+xL', '+yS', '+zS', '-yS'] },          // large front/left/right, small top/back/bottom
   CargoL:      { L: ['*L'], S: ['-zL', '-xL', '+xL', '+yS', '+zS', '-yS'] },
-  CargoBulk:   { L: ['-zL', '+zL', '+xL@2.1.1', '+xL@2.1.4'] },
+  CargoBulk:   { L: ['-zL', '+zL', '+xL@2.1.1', '+xL@2.1.4'] },            // both square ends + 2 on one long side
   CargoMod:    { S: ['-xL', '+xL', '-zL', '+zL'] },
-  Connector:   { L: ['+zL'], S: ['+zL'] },
+  Connector:   { L: ['+zL'], S: ['+zL', '+xS', '-xS', '+yS', '-yS'] },     // large on the back; SG adds 4 small on the sides
   ConnectorS:  { S: ['+zS'] },
-  H2Tank:      { L: ['*L'], S: ['+yL', '-yL', '+xS', '-xS', '+zS', '-zS'] },
+  // Gas -------------------------------------------------------------------------------------------
+  H2Tank:      { L: ['*L'], S: ['+yL', '-yL', '+xS', '-xS', '+zS', '-zS'] },// LG: centre of each side; SG: large top/bottom, small around
   H2TankS:     { L: ['+yL', '-yL'] },
-  O2Tank:      { L: ['+yL', '-yL'], S: ['+yL', '-yL'] },
-  O2H2Gen:     { L: ['-yL', '+xL@0.0.0', '-xL@0.0.0', '+zL@0.0.0', '-zL@0.0.0'], S: ['+zL', '+xS', '-xS'] },
-  HydroS:      { L: ['-zL'], S: ['-zS'] },
-  HydroL:      { L: ['-zL'], S: ['-zL'] },
-  H2Engine:    { L: ['-zL', '+zL'], S: ['+zL', '+xS', '-xS'] },
-  ReactorS:    { L: ['*L'], S: ['*S'] },
-  ReactorL:    { L: ['*L'], S: ['*L'] },
-  CockpitSG:   { S: ['+zS', '-yS'] },
+  O2Tank:      { L: ['+yL', '-yL'], S: ['+zL', '-zS@0.1.0', '-zS@2.1.0'] },// LG: both ends; SG: large back, 2 small front
+  O2H2Gen:     { L: ['+yL', '-yL', '+xL@0.0.0', '-xL@0.0.0'], S: ['+zL', '-zS@0.1.0', '-zS@2.1.0'] }, // LG: both ends + 2 opposing long sides; SG: like the O2 tank
+  HydroS:      { L: ['-zL'], S: ['-zS'] },                                   // opposite the nozzle
+  HydroL:      { L: ['-zL', '+xL', '-xL', '+yL', '-yL'], S: ['-zL', '+xL', '-xL', '+yL', '-yL'] }, // opposite the nozzle + the 4 sides
+  H2Engine:    { L: ['+zL', '-yL@0.0.0'], S: ['-xS', '+xS'] },              // LG: one end + bottom of the long side; SG: both ends
+  // Power -----------------------------------------------------------------------------------------
+  ReactorS:    { L: ['+zL'], S: ['+zS'] },                                   // a single port (back)
+  ReactorL:    { L: ['+zL', '-yL'], S: ['+zL', '-yL'] },                     // two ports on neighbouring sides
+  // Control ---------------------------------------------------------------------------------------
+  CockpitSG:   { S: ['+zS@0.1.2', '+zS@2.1.2'] },                            // two small ports on the back, one block apart
   Fighter:     { S: ['+zS'] },
-  CockpitLG:   { L: ['+zL'] },
-  Drill:       { L: ['+zL'], S: ['+zS', '+xS@2.1.5', '-xS@0.1.5'] },
+  CockpitLG:   { L: ['-yL'] },                                               // underneath
+  // Tools -----------------------------------------------------------------------------------------
+  Drill:       { L: ['+zL'], S: ['+zS', '+xS@2.1.5', '-xS@0.1.5'] },        // LG back; SG back + both sides at the rear
   Welder:      { L: ['+zL'], S: ['+zS'] },
   Grinder:     { L: ['+zL'], S: ['+zS'] },
-  Collector:   { L: ['+zL'], S: ['+zL'] },
-  Refinery:    { L: ['-xL@0.0.0', '+xL@1.0.1', '-zL@1.0.0', '+zL@0.0.1'] },
-  BasicRefinery:{ L: ['-zL@0.0.0', '+zL@0.0.0'] },
-  BasicAssembler:{ L: ['+zL'] },
-  SurvivalKit: { L: ['+zL'], S: ['+zL'] },
-  Assembler:   { L: ['-zL', '+zL', '-xL@0.0.0', '+xL@0.0.1'] },
+  Collector:   { L: ['-yL'], S: ['-xL', '+xL', '-yS', '-zS', '+zS'] },      // LG underside; SG 2 large sides, 3 small
+  // Production (block front = -z, back = +z, right = +x, top = +y) --------------------------------
+  Refinery:    { L: ['+xL@1.0.1', '-xL@0.0.1', '+yL@1.3.1', '-yL@0.0.1'] }, // right & left bottom-back, top back-right, bottom back-left
+  BasicRefinery:{ L: ['-zL@0.0.0', '+zL@0.0.0'] },                           // two ports (positions approximate)
+  Assembler:   { L: ['-zL', '+zL', '-xL@0.0.0', '+xL@0.0.0'] },             // both ends + an opposing pair of long sides
+  BasicAssembler:{ L: ['+zL'] },                                              // one port
+  SurvivalKit: { L: ['-xL', '+xL'], S: ['+xS@2.1.0', '+xS@2.1.2', '-xL'] },// LG 2 large on the sides; SG 2 small right, 1 large left
+  // Conveyors -------------------------------------------------------------------------------------
   ConvJunc:    { L: ['*L'], S: ['*S'] },
-  GatTurret:   { L: ['-yL'], S: ['-yL'] },
-  RktTurret:   { L: ['-yL'], S: ['-yL'] },
-  AsltTurret:  { L: ['-yL'] },
-  AutoTurret:  { S: ['-yS'] },
-  GatGun:      { S: ['+zS'] },
-  RktLauncher: { L: ['+zL'], S: ['+zS'] },
-  Parachute:   { L: ['-yL'], S: ['-yS'] },
   ConvTube:    { L: ['-zL', '+zL'], S: ['-zS', '+zS'] },
   ConvCurve:   { L: ['-zL', '+yL'], S: ['-zS', '+yS'] },
   ConvHubSG:   { S: ['*L'] },
@@ -305,6 +305,14 @@ const PORTS = {
   ConvConverter:{ S: ['-zL', '+zS'] },
   Sorter:      { L: ['-zL', '+zL'], S: ['-zS', '+zS'] },
   SorterM:     { S: ['-zL', '+zL'] },
+  // Weapons & misc --------------------------------------------------------------------------------
+  GatTurret:   { L: ['-yL'], S: ['-yL', '+xS@4.0.2', '-xS@0.0.2', '+zS@2.0.4', '-zS@2.0.0'] }, // underside; SG + 4 small sides
+  RktTurret:   { L: ['-yL'], S: ['-yL'] },
+  AsltTurret:  { L: ['-yL'] },
+  AutoTurret:  { S: ['-yS'] },
+  GatGun:      { S: ['+zS'] },
+  RktLauncher: { L: ['+zL'], S: ['+zS'] },
+  Parachute:   { L: ['-yL'], S: ['-yS'] },
 };
 
 const FACES = { '+x': [1,0,0], '-x': [-1,0,0], '+y': [0,1,0], '-y': [0,-1,0], '+z': [0,0,1], '-z': [0,0,-1] };

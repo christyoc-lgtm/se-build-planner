@@ -2,21 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="20261107-3">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="app-version" content="20261107-5">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161b22">
 <title>Space Engineers Build Planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1l7 7-7 7-7-7z' fill='%23f0883e'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=20261107-3">
+<link rel="stylesheet" href="css/style.css?v=20261107-5">
 </head>
 <body>
 <header id="topbar">
-  <div class="brand"><span class="logo">◆</span> SE Build Planner</div>
+  <div class="brand"><span class="logo">◆</span><span class="long"> SE Build Planner</span></div>
   <input id="designName" class="name" value="Untitled ship" title="Design name" spellcheck="false">
   <div class="seg" id="gridSeg" title="Grid size of this design">
-    <button data-grid="L" class="on">Large grid</button><button data-grid="S">Small grid</button>
+    <button data-grid="L" class="on">Large<span class="long"> grid</span></button><button data-grid="S">Small<span class="long"> grid</span></button>
   </div>
   <div class="seg" id="typeSeg" title="Ship (thrust matters) or Station (grounded base)">
-    <button data-type="ship" class="on">Ship</button><button data-type="station">Station / Base</button>
+    <button data-type="ship" class="on">Ship</button><button data-type="station"><span class="long">Station / </span>Base</button>
   </div>
   <div class="spacer"></div>
   <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
@@ -197,6 +198,11 @@
       <span class="muted">Red arrow = Forward (−Z) · Green = Up · C = conveyor view</span>
       </span>
     </div>
+    <div id="touchBar" hidden>
+      <span id="touchMsg">Preview shown — rotate it if needed, then</span>
+      <button id="touchPlace" class="primary">✓ Place</button><button id="touchCancel">✕</button>
+    </div>
+    <div id="scrim"></div>
     <div id="statusbar">
       <span id="stSel"></span><span id="stCell"></span><span id="stCount"></span>
       <span class="muted">Left-click: tool · Right-drag: orbit · Middle-drag / Shift+right: pan · Wheel: zoom</span>
@@ -238,6 +244,12 @@
     <section id="bomSection"></section>
   </aside>
 </main>
+<nav id="mobileNav">
+  <button data-drawer="blocks">▦<span>Blocks</span></button>
+  <button data-drawer="tools">⚙<span>Tools</span></button>
+  <button data-drawer="" class="on">◈<span>Build</span></button>
+  <button data-drawer="right">📊<span>Analysis</span></button>
+</nav>
 
 <!-- Modals -->
 <div class="modal" id="helpModal" hidden>
@@ -283,34 +295,32 @@
 </div>
 
 <div class="modal" id="customModal" hidden>
-  <div class="box">
+  <div class="box wide">
     <button class="close" data-close>×</button>
     <h2>Custom block</h2>
     <p class="small muted">For modded blocks, DLC variants or anything not in the list. It's saved with this design and in your browser's custom library, for this grid size.</p>
     <div class="formgrid">
+      <label>Start from</label><select id="cbFrom"></select>
       <label>Name</label><input id="cbName" value="My block">
       <label>Category</label><select id="cbCat"></select>
-      <label>Size (x,y,z cells)</label><div class="inline"><input id="cbX" type="number" value="1" min="1"><input id="cbY" type="number" value="1" min="1"><input id="cbZ" type="number" value="1" min="1"></div>
+      <label>Size (x, y, z cells)</label><div class="inline" title="x = width (left→right), y = height, z = length (front→back)"><input id="cbX" type="number" value="1" min="1" max="30"><input id="cbY" type="number" value="1" min="1" max="30"><input id="cbZ" type="number" value="1" min="1" max="30"><span class="small muted">wide × tall × long</span></div>
       <label>Mass (kg)</label><input id="cbMass" type="number" value="500" min="0">
       <label>Cargo volume (L)</label><input id="cbInv" type="number" value="0" min="0">
-      <label>Thruster type</label><select id="cbThrType"><option value="">— not a thruster —</option></select>
-      <label>Thrust (N)</label><input id="cbForce" type="number" value="0" min="0">
-      <label>Power use (MW)</label><input id="cbPower" type="number" value="0" min="0" step="0.1">
-      <label>H₂ use (L/s)</label><input id="cbH2" type="number" value="0" min="0">
+      <label>Thruster type</label><select id="cbThrType"></select>
+      <label class="cbThr">Thrust (N)</label><input class="cbThr" id="cbForce" type="number" value="0" min="0">
+      <label class="cbThr">Power use (MW)</label><input class="cbThr" id="cbPower" type="number" value="0" min="0" step="0.1">
+      <label class="cbThr">H₂ use (L/s)</label><input class="cbThr" id="cbH2" type="number" value="0" min="0">
       <label>Power output (MW)</label><input id="cbPOut" type="number" value="0" min="0" step="0.1">
       <label>H₂ capacity (L)</label><input id="cbH2Cap" type="number" value="0" min="0">
-      <label>Conveyor ports</label><select id="cbPorts">
-        <option value="">None</option>
-        <option value="*L">Large, all faces</option>
-        <option value="*S">Small, all faces</option>
-        <option value="+zL">Large, back face</option>
-        <option value="+zS">Small, back face</option>
-        <option value="-zL">Large, front face</option>
-        <option value="-zS">Small, front face</option>
-        <option value="-zL +zL">Large, front + back</option>
-        <option value="-zS +zS">Small, front + back</option>
-        <option value="-zL +zS">Converter: large front, small back</option>
+      <label>Modules</label><select id="cbProd">
+        <option value="">Doesn't use upgrade modules</option>
+        <option value="refinery">Refinery-type block: accepts modules</option>
+        <option value="assembler">Assembler-type block: accepts modules</option>
+        <option value="speed">This block is a Speed module</option>
+        <option value="yield">This block is a Yield module</option>
+        <option value="power">This block is a Power Efficiency module</option>
       </select>
+      <label class="cbProdKw">Power use (kW)</label><input class="cbProdKw" id="cbProdKw" type="number" value="560" min="0">
       <label>Conveyor role</label><select id="cbRole">
         <option value="">Auto (from the fields above)</option>
         <option value="cargo">Cargo / inventory</option>
@@ -320,12 +330,51 @@
         <option value="assembler">Production (needs large conveyors)</option>
       </select>
     </div>
-    <div class="row right"><button id="cbSave" class="primary">Add block</button></div>
+
+    <h3 style="margin:16px 0 4px">Conveyor ports &amp; module slots</h3>
+    <p class="small muted" style="margin:0 0 8px">Pick a face, pick what to add, then tap (or drag across) cells. Cells are numbered <b>row × column</b> as seen from outside the block: row 1 is the bottom. Tap a cell again to remove it.</p>
+    <div class="fe-wrap">
+      <div class="fe-side">
+        <div class="lbl" style="margin-top:0">Face</div>
+        <div class="seg wide fe-faces" id="cbFaceSeg"></div>
+        <div class="lbl">Add</div>
+        <div class="seg wide fe-brush" id="cbBrush"></div>
+        <div class="lbl">Quick fill</div>
+        <div class="row" style="margin-top:2px;gap:6px;flex-wrap:wrap">
+          <select id="cbPorts" title="Replaces all conveyor ports (module slots are kept)">
+            <option value="">Ports preset…</option>
+            <option value="none">Remove all ports</option>
+            <option value="*L">Large, centre of every face</option>
+            <option value="*S">Small, centre of every face</option>
+            <option value="+zL">Large, back face</option>
+            <option value="+zS">Small, back face</option>
+            <option value="-zL +zL">Large, front + back</option>
+            <option value="-zS +zS">Small, front + back</option>
+            <option value="-zL +zS">Converter: large front, small back</option>
+          </select>
+          <select id="cbSlotsFace" title="Make every cell of a face a module slot">
+            <option value="">Module slots on a whole face…</option>
+            <option value="-z">Front</option><option value="+z">Back</option><option value="-x">Left</option>
+            <option value="+x">Right</option><option value="+y">Top</option><option value="-y">Bottom</option>
+          </select>
+        </div>
+        <div class="lbl">Or type them</div>
+        <div class="row" style="margin-top:2px;gap:6px"><input id="cbPortText" placeholder="e.g. Left 1x2 L; Top 2x1 S; Back 1x1 M" style="flex:1"><button id="cbPortAdd" class="mini">Add</button></div>
+        <div class="small muted" style="margin-top:3px">L = large port, S = small port, M = module slot.</div>
+      </div>
+      <div class="fe-main">
+        <div id="cbFaceGrid" class="fe-grid"></div>
+        <div id="cbFaceHint" class="small muted" style="text-align:center;margin-top:4px"></div>
+      </div>
+    </div>
+    <div id="cbPortList" class="chips"></div>
+    <div id="cbModWarn" class="small" style="color:var(--warn);min-height:1em"></div>
+    <div class="row right"><button id="cbDelete" hidden>Delete block</button><button id="cbSave" class="primary">Add block</button></div>
   </div>
 </div>
 
 <div id="toast"></div>
 
-<script type="module" src="js/app.js?v=20261107-3"></script>
+<script type="module" src="js/app.js?v=20261107-5"></script>
 </body>
 </html>
