@@ -75,7 +75,9 @@ There are blocks for the **Basic Refinery**, **Basic Assembler**, **Survival Kit
 - **Yield:** ×1.19 per Yield module, up to 200% with four; Refineries only.
 - **Power:** Speed modules double the power use each, and each Power Efficiency module cuts it to ×0.67.
 
-It also gives the total power with all production running, and warns about modules that aren't touching anything or have no effect (a Yield module on an Assembler, or more than 4 on one block).
+It also gives the total power with all production running, and warns about modules that aren't connected or have no effect (a Yield module on an Assembler, or more than 8 points on one block).
+
+**Module attachment points:** a Refinery has 8 on its back, an Assembler has 8 on its long sides, and each module has 2 on the side with the lights. While you place a module, Refinery or Assembler, the preview shows its points: green = will connect, purple = open, amber = blocked. Free points on nearby blocks show in faint purple, and **T** turns the block so its points line up.
 
 ## Flight analysis
 

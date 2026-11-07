@@ -3,8 +3,8 @@
 //  - Large ↔ large and small ↔ small connect. Large ↔ small does NOT connect: a Conveyor Converter is needed.
 //  - Gas (hydrogen/oxygen), ore and ingots travel through any connection.
 //    Components and large items only travel through LARGE connections.
-import { getDef } from './calc.js?v=20261107-2';
-import { applyRot, rotatedSize } from './rotations.js?v=20261107-2';
+import { getDef } from './calc.js?v=20261107-3';
+import { applyRot, rotatedSize } from './rotations.js?v=20261107-3';
 
 const ck = (c) => c[0] + ',' + c[1] + ',' + c[2];
 
@@ -13,6 +13,12 @@ class UF {
   find(a) { if (!this.p.has(a)) this.p.set(a, a); let r = a; while (this.p.get(r) !== r) r = this.p.get(r);
     while (this.p.get(a) !== r) { const n = this.p.get(a); this.p.set(a, r); a = n; } return r; }
   union(a, b) { const x = this.find(a), y = this.find(b); if (x !== y) this.p.set(x, y); }
+}
+
+/** World-space upgrade-module attachment points of a placed block. */
+export function worldUpgradePoints(b, def) {
+  if (!def.upgrade || !def.upgrade.length) return [];
+  return worldPorts(b, { ...def, ports: def.upgrade.map(p => ({ ...p, s: 'U' })) });
 }
 
 /** World-space ports of a placed block. */

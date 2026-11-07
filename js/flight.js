@@ -1,9 +1,9 @@
 // Flight analysis: speed & stopping, endurance & reaching space, jump range,
 // gyroscope turning, landing stability and parachutes.
 // Pure functions; all inputs in SI units (kg, N, m, s) unless noted.
-import { G0, PLANETS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-2';
-import { getDef, thrustDirOf, dirIdOf } from './calc.js?v=20261107-2';
-import { rotatedSize } from './rotations.js?v=20261107-2';
+import { G0, PLANETS, THRUSTER_TYPES, thrusterEffectiveness } from './data.js?v=20261107-3';
+import { getDef, thrustDirOf, dirIdOf } from './calc.js?v=20261107-3';
+import { rotatedSize } from './rotations.js?v=20261107-3';
 
 const OPP = { up: 'down', down: 'up', forward: 'back', back: 'forward', left: 'right', right: 'left' };
 

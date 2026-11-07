@@ -199,3 +199,4 @@ table.cmp td:nth-child(2), table.cmp td:nth-child(3) { white-space: nowrap; }
 
 .panel section:empty { display: none; }
 #palette { margin-top: 6px; }
+.pt.U { background: #8957e533; color: #d2a8ff; }

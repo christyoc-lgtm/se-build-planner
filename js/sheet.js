@@ -1,8 +1,8 @@
 // Printable build sheet: summary, snapshots, parts list and floor-by-floor plans.
-import { GRID, DIRS, THRUSTER_TYPES, CATEGORIES } from './data.js?v=20261107-2';
-import { getDef, thrustDirOf, fmt } from './calc.js?v=20261107-2';
-import { rotatedSize } from './rotations.js?v=20261107-2';
-import { blockColor } from './geometry.js?v=20261107-2';
+import { GRID, DIRS, THRUSTER_TYPES, CATEGORIES } from './data.js?v=20261107-3';
+import { getDef, thrustDirOf, fmt } from './calc.js?v=20261107-3';
+import { rotatedSize } from './rotations.js?v=20261107-3';
+import { blockColor } from './geometry.js?v=20261107-3';
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hex = n => '#' + n.toString(16).padStart(6, '0');

@@ -328,6 +328,26 @@ export function parsePorts(tokens, size) {
   return out;
 }
 
+// Upgrade-module attachment points: every cell on the listed faces is one point.
+//  Refinery: 8 points on its back (+z). Assembler: 8 points on its four long sides.
+//  Modules: 2 points on one long side (+x, the side with the indicator lights).
+const UPGRADE = {
+  Refinery:    { L: ['+z'] },
+  Assembler:   { L: ['+x', '-x', '+y', '-y'] },
+  SpeedModule: { L: ['+x'] },
+  YieldModule: { L: ['+x'] },
+  PowerModule: { L: ['+x'] },
+};
+export function faceCells(face, size) {
+  const n = FACES[face], out = [];
+  for (let x = 0; x < size[0]; x++) for (let y = 0; y < size[1]; y++) for (let z = 0; z < size[2]; z++) {
+    const c = [x, y, z];
+    if ([0, 1, 2].every(i => !n[i] || c[i] === (n[i] > 0 ? size[i] - 1 : 0))) out.push({ c, n });
+  }
+  return out;
+}
+function parseUpgrade(faces, size) { return (faces || []).flatMap(f => faceCells(f, size)); }
+
 // System roles used by the conveyor checks
 const ROLES = {
   CargoS: 'cargo', CargoM: 'cargo', CargoL: 'cargo', CargoBulk: 'cargo', CargoMod: 'cargo',
@@ -355,6 +375,7 @@ for (const r of RAW) {
       thrust: spec.thrust || null, pOut: spec.pOut || 0, store: spec.store || 0,
       h2: spec.h2 || 0, o2: spec.o2 || 0,
       ports: parsePorts(PORTS[r.key] && PORTS[r.key][grid], spec.s),
+      upgrade: parseUpgrade(UPGRADE[r.key] && UPGRADE[r.key][grid], spec.s),
       gyro: r.key === 'Gyro' ? (grid === 'L' ? 3.36e7 : 4.48e5) : 0,     // max torque (N·m)
       jump: spec.jump || null, chute: spec.chute || 0, prod: spec.prod || null, module: spec.module || null, gear: r.key === 'LandingGear' || r.key.startsWith('Wheel'),
       role: ROLES[r.key] || (spec.thrust && spec.thrust.type === 'hydrogen' ? 'h2thrust' : null),

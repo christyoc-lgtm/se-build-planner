@@ -1,15 +1,15 @@
 // Space Engineers Build Planner — editor & UI
-import * as THREE from './vendor/three.module.min.js?v=20261107-2';
-import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-2';
-import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-2';
-import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-2';
-import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt, productionAnalysis } from './calc.js?v=20261107-2';
-import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-2';
-import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-2';
-import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-2';
-import { flightAnalysis, planetOf } from './flight.js?v=20261107-2';
-import { encodeDesign, decodeDesign } from './share.js?v=20261107-2';
-import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-2';
+import * as THREE from './vendor/three.module.min.js?v=20261107-3';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-3';
+import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-3';
+import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-3';
+import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt, productionAnalysis, upgradeLinks } from './calc.js?v=20261107-3';
+import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-3';
+import { analyseConveyors, worldPorts, worldUpgradePoints } from './conveyor.js?v=20261107-3';
+import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-3';
+import { flightAnalysis, planetOf } from './flight.js?v=20261107-3';
+import { encodeDesign, decodeDesign } from './share.js?v=20261107-3';
+import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-3';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -513,6 +513,7 @@ function showGhost(h) {
         g.traverse(o => { o.raycast = () => {}; });
         ghostGroup.add(g);
         if (pl.def.ports && pl.def.ports.length && list.length === 1) drawGhostPorts(pl.def, b);
+        if (pl.def.upgrade && pl.def.upgrade.length && list.length === 1) drawGhostUpgrade(pl.def, b);
       }
     }
     const pl = list[0];
@@ -522,6 +523,12 @@ function showGhost(h) {
       const con = st.filter(x => x.status === 'connected').length, mm = st.filter(x => x.status === 'mismatch').length;
       portTxt = ` · ports: ${con}/${st.length} would connect` + (mm ? `, ${mm} size mismatch` : '') + (con ? '' : ' (T = auto-rotate)');
       drawNearbyPorts(pl.p);
+    }
+    if (pl && pl.def.upgrade && pl.def.upgrade.length && list.length === 1) {
+      const st = ghostUpgradeStatus(pl.def, { p: pl.p, r: pl.r });
+      const con = st.filter(x => x.status === 'connected').length;
+      portTxt += ` · module points: ${con}/${st.length} connect` + (con ? '' : ' (T = auto-rotate)');
+      drawNearbyUpgrade(pl.p, !!pl.def.module);
     }
     if (pl) $('#stCell').textContent = `Cell ${pl.p.join(', ')}` + (list.length > 1 ? ` · fill ${list.length}` : '') + portTxt;
   } else if (h.kind === 'block') {
@@ -555,7 +562,7 @@ function ghostPortStatus(def, b) {
 }
 function portMarker(p, color, { scale = 1, opacity = 1, onTop = true } = {}) {
   const c = cellSize();
-  const sz = (p.size === 'L' ? 0.62 : 0.28) * scale;
+  const sz = (p.size === 'L' ? 0.62 : p.size === 'U' ? 0.42 : 0.28) * scale;
   const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshBasicMaterial({ color, depthTest: !onTop, transparent: true, opacity }));
   m.position.set((p.cell[0] + 0.5 + p.n[0] * 0.5) * c, (p.cell[1] + 0.5 + p.n[1] * 0.5) * c, (p.cell[2] + 0.5 + p.n[2] * 0.5) * c);
@@ -584,11 +591,48 @@ function drawNearbyPorts(p0) {
     ghostGroup.add(portMarker(p, p.size === 'L' ? 0x58a6ff : 0x39c5cf, { scale: 0.7, opacity: 0.45 }));
   }
 }
+// Upgrade-module attachment points (Refinery / Assembler <-> modules)
+let lastUp = null;
+const UP_COLORS = { connected: 0x3fb950, open: 0xbc8cff, blocked: 0xd29922 };
+function ghostUpgradeStatus(def, b) {
+  const map = lastUp ? lastUp.map : new Map();
+  return worldUpgradePoints(b, def).map(p => {
+    const nb = [p.cell[0] + p.n[0], p.cell[1] + p.n[1], p.cell[2] + p.n[2]];
+    const q = map.get(nb.join() + '|' + p.n.map(v => -v).join());
+    const status = q && q.isModule !== !!def.module ? 'connected' : occ.has(ck(...nb)) ? 'blocked' : 'open';
+    return { ...p, status };
+  });
+}
+function drawGhostUpgrade(def, b) {
+  const c = cellSize();
+  for (const p of ghostUpgradeStatus(def, b)) {
+    ghostGroup.add(portMarker(p, UP_COLORS[p.status]));
+    const from = new THREE.Vector3((p.cell[0] + 0.5 + p.n[0] * 0.5) * c, (p.cell[1] + 0.5 + p.n[1] * 0.5) * c, (p.cell[2] + 0.5 + p.n[2] * 0.5) * c);
+    const a = makeArrow(from, p.n, c * 0.35, UP_COLORS[p.status]);
+    a.traverse(o => { if (o.material) { o.material.depthTest = false; o.material.transparent = true; } o.renderOrder = 31; o.raycast = () => {}; });
+    ghostGroup.add(a);
+  }
+}
+/** Free attachment points of the other kind (production blocks when placing a module, and vice versa). */
+function drawNearbyUpgrade(p0, placingModule) {
+  if (!lastUp) return;
+  const R = 8;
+  for (const it of lastUp.items) {
+    if (!!it.def.module === placingModule) continue;
+    for (const p of it.pts) {
+      if (p.peer != null) continue;
+      if (Math.abs(p.cell[0] - p0[0]) > R || Math.abs(p.cell[1] - p0[1]) > R || Math.abs(p.cell[2] - p0[2]) > R) continue;
+      ghostGroup.add(portMarker(p, 0xbc8cff, { scale: 0.75, opacity: 0.55 }));
+    }
+  }
+}
+
 /** Rotate the selected block so that the most ports connect at the hovered spot (thrusters keep their thrust direction). */
 function autoRotate() {
   if (!hover || state.tool !== 'place') { toast('Point at where you want to place the block, then press T'); return; }
   const def = getDef(state.design, state.selId);
-  if (!def || !def.ports || !def.ports.length) { toast(`${def ? def.name : 'This block'} has no conveyor ports`); return; }
+  const hasPorts = def && def.ports && def.ports.length, hasUp = def && def.upgrade && def.upgrade.length;
+  if (!hasPorts && !hasUp) { toast(`${def ? def.name : 'This block'} has no conveyor ports or module points`); return; }
   const keepDir = def.thrust ? thrustDirOf(state.rot).join() : null;
   let best = null;
   for (let k = 0; k < ROTS.length; k++) {
@@ -597,13 +641,15 @@ function autoRotate() {
     const pl = placementAt(hover, state.selId, r); if (!pl) continue;
     const b = { p: pl.p, r };
     if (!fits(b, def)) continue;
-    const st = ghostPortStatus(def, b);
-    const score = st.filter(x => x.status === 'connected').length * 10 - st.filter(x => x.status === 'mismatch').length * 5 - st.filter(x => x.status === 'blocked').length;
-    if (!best || score > best.score) best = { r, score, con: st.filter(x => x.status === 'connected').length };
+    const st = hasPorts ? ghostPortStatus(def, b) : [];
+    const up = hasUp ? ghostUpgradeStatus(def, b) : [];
+    const con = st.filter(x => x.status === 'connected').length + up.filter(x => x.status === 'connected').length;
+    const score = con * 10 - st.filter(x => x.status === 'mismatch').length * 5 - st.filter(x => x.status === 'blocked').length - up.filter(x => x.status === 'blocked').length;
+    if (!best || score > best.score) best = { r, score, con };
   }
-  if (!best || best.con === 0) { toast('No orientation connects a port here. Try another spot, or check the port sizes.'); return; }
+  if (!best || best.con === 0) { toast(hasUp && !hasPorts ? 'No orientation lines up module points here. Modules attach to a Refinery\'s back or an Assembler\'s long sides.' : 'No orientation connects a port here. Try another spot, or check the port sizes.'); return; }
   state.rot = best.r; updateRotLabel(); showGhost(hover);
-  toast(`Rotated: ${best.con} port${best.con > 1 ? 's' : ''} will connect`);
+  toast(`Rotated: ${best.con} connection${best.con > 1 ? 's' : ''} will be made`);
 }
 
 
@@ -891,6 +937,10 @@ function updateHoverInfo(h) {
     t += `<br>Pushes ship <b>${d.name}</b> · ${fmt.N(def.thrust.f * eff)} (${Math.round(eff * 100)}%)`;
   }
   if (def.inv) t += `<br>Cargo ${fmt.L(def.inv * S().invMult)}`;
+  if (def.upgrade && def.upgrade.length && lastUp) {
+    const it = lastUp.items.find(x => x.b.uid === b.uid);
+    if (it) t += `<br>Module points: ${it.pts.filter(p => p.peer != null).length}/${it.pts.length} connected`;
+  }
   if (lastConv && def.ports && def.ports.length) {
     const x = lastConv.byUid.get(b.uid);
     const net = lastConv.netOf.get(b.uid);
@@ -970,6 +1020,10 @@ function updateRotLabel() {
       });
       pi.innerHTML = `Ports: ${items.join(' ')}`;
     } else pi.innerHTML = def ? '<span class="muted">No conveyor ports</span>' : '';
+    if (def && def.upgrade && def.upgrade.length) {
+      const faces = [...new Set(def.upgrade.map(p => DIRS.find(x => x.v.join() === applyRot(state.rot, p.n).join()).name))];
+      pi.innerHTML += ` <span class="pt U">${def.module ? '2 module points' : def.upgrade.length + ' module points'} → ${faces.join(', ')}</span>`;
+    }
   }
 }
 
@@ -1217,7 +1271,8 @@ function renderAnalysis() {
 
   // Flight -------------------------------------------------------------------
   try { renderFlight(a, flightAnalysis(d, env, a), env, station); } catch (err) { console.error(err); }
-  renderProduction(productionAnalysis(d), a);
+  lastUp = upgradeLinks(d, worldUpgradePoints);
+  renderProduction(productionAnalysis(d, worldUpgradePoints), a);
   renderLayers();
 
   // Conveyors ----------------------------------------------------------------
@@ -1258,7 +1313,7 @@ function renderProduction(P, a) {
   const kindName = { refinery: 'refining', assembler: 'assembling', kit: 'stone & basics' };
   const rows = P.rows.map((r, i) => {
     const mods = r.canModules
-      ? ['speed', 'yield', 'power'].filter(k => r.counts[k]).map(k => `${r.counts[k]} ${k}`).join(', ') || '<span class="muted">none</span>'
+      ? (['speed', 'yield', 'power'].filter(k => r.points[k]).map(k => `${k} ${r.points[k]}`).join(', ') || '<span class="muted">none</span>') + `<div class="muted">${r.used}/8 points used</div>`
       : '<span class="muted">no module ports</span>';
     return `<tr data-prow="${i}" style="cursor:pointer" title="Show this block"><td>${escapeHtml(r.name)}</td><td class="small">${mods}</td>
       <td>${r.speedPct}%${r.kind === 'refinery' ? `<div class="small muted">rate ×${r.rate.toFixed(2)}</div>` : ''}</td>
@@ -1270,9 +1325,9 @@ function renderProduction(P, a) {
     <div class="kv" style="margin-top:6px"><span class="k">All production running at once</span><span class="v"><b>${P.totalKw >= 1000 ? (P.totalKw / 1000).toFixed(2) + ' MW' : P.totalKw.toFixed(0) + ' kW'}</b></span>
       <span class="k">Grid power output</span><span class="v">${fmt.num(a.pOut)} MW</span></div>
     ${pOutKw && P.totalKw > pOutKw ? '<div class="note warn">Production can draw more power than the grid makes, so it will slow down when everything runs together.</div>' : ''}` : ''}
-    ${P.loose.length ? `<div class="note warn">${P.loose.length} upgrade module${P.loose.length > 1 ? 's are' : ' is'} not touching a Refinery or Assembler, so ${P.loose.length > 1 ? 'they do' : 'it does'} nothing. Place modules directly against one (the Refinery takes them on its back, the Assembler on any side).</div>` : ''}
+    ${P.loose.length ? `<div class="note warn">${P.loose.length} upgrade module${P.loose.length > 1 ? 's aren\'t' : ' isn\'t'} connected, so ${P.loose.length > 1 ? 'they do' : 'it does'} nothing. A module's lit side must face a Refinery's back or one of an Assembler's long sides. Select the module type, point at the spot and press T to line it up.</div>` : ''}
     ${P.wasted.length ? `<div class="note warn">${P.wasted.length} module${P.wasted.length > 1 ? 's have' : ' has'} no effect: Yield modules only work on Refineries, and each block takes at most 4 modules.</div>` : ''}
-    <div class="small muted" style="margin-top:4px">Each module adds 2 attachment points: Speed +100% speed (and power); Yield ×1.19 ingots (Refinery only, 200% with 4); Power Efficiency ×0.67 power per module. Modules count for the block they touch.</div>`;
+    <div class="small muted" style="margin-top:4px">Numbers are attachment points: each module has 2 (on the side with the lights), the Refinery has 8 on its back and the Assembler 8 on its long sides. Per point: Speed +50% (and power), Yield ×1.09 (Refinery only, 200% at 8), Power Efficiency ×0.82 power. While placing a module, its points show green where they will connect.</div>`;
   $$('[data-prow]', el).forEach(tr => tr.onclick = () => focusBlocks([P.rows[+tr.dataset.prow].uid], { conveyor: false }));
 }
 
