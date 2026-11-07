@@ -32,7 +32,7 @@ const state = {
   design: newDesign('L'),
   tool: 'place', selId: 'L_LightArmor', rot: 0, color: null,
   mirror: { x: false, y: false, z: false }, mirrorPos: { x: 0.5, y: 0.5, z: 0.5 },
-  layerY: 0, cutOn: false, cutY: 0, showArrows: true, showCom: true,
+  layerY: 0, cutOn: false, cutY: 0, showArrows: true, showCom: true, showAxes: true,
   undo: [], redo: [], dirty: false,
   convView: false, focusUid: null,
   selection: new Set(), clipboard: null, pasteIsMove: false, layers: {}, selAllHeights: true,
@@ -140,6 +140,7 @@ function setupGridHelpers() {
   axisGroup.add(textSprite('UP', new THREE.Vector3(0, L * 0.7 + c * 0.4, 0), c));
   axisGroup.add(textSprite('RIGHT', new THREE.Vector3(L * 0.7 + c * 0.8, 0, 0), c));
   axisGroup.traverse(o => { if (o.material) { o.material.depthTest = false; o.material.transparent = true; } o.renderOrder = 15; o.raycast = () => {}; });
+  axisGroup.visible = state.showAxes;
   scene.add(axisGroup);
 }
 function textSprite(text, pos, scale) {
@@ -308,6 +309,11 @@ function focusBlocks(uids) {
   const t = setInterval(() => { helper.visible = !helper.visible; if (++n > 7) { clearInterval(t); scene.remove(helper); } }, 180);
 }
 
+function setShowAxes(on) {
+  state.showAxes = on;
+  if (axisGroup) axisGroup.visible = on;
+  const cb = $('#showAxes'); if (cb) cb.checked = on;
+}
 function rebuildMirrorPlanes() {
   mirrorGroup.clear();
   const c = cellSize(), size = 40 * c;
@@ -428,6 +434,7 @@ function mirroredVariants(pl) {
 }
 
 function placeBlocks(list) {
+  if (list[0]) { noteRecent(list[0].id); setTimeout(renderPalette, 0); }
   commit(() => {
     const extra = new Set();
     for (const pl of list) {
@@ -952,7 +959,8 @@ function updateRotLabel() {
   let s = '';
   if (def && def.thrust) { const d = DIRS.find(x => x.v.join() === thrustDirOf(state.rot).join()); s = `→ pushes ${d.name}`; }
   else { const f = applyRot(state.rot, [0, 0, -1]); const d = DIRS.find(x => x.v.join() === f.join()); s = `front faces ${d.name}`; }
-  $('#rotLabel').textContent = s;
+  $('#rotLabel2').textContent = s;
+  $('#rotLabel').textContent = state.tool === 'place' && def ? `${def.name} · ${s}` : state.tool === 'paste' ? 'Pasting: W/A/S/D/Q/E rotate · Esc stops' : '';
   const pi = $('#portInfo');
   if (pi) {
     if (def && def.ports && def.ports.length) {
@@ -974,29 +982,64 @@ function allDefsForGrid() {
   for (const cb of Object.values(state.design.customBlocks || {})) if (cb.grid === g) list.push(cb);
   return list;
 }
+const LS_FAVS = 'sebp.favs.v1', LS_RECENT = 'sebp.recent.v1', LS_TAB = 'sebp.lefttab.v1';
+let favs = new Set(readJSON(LS_FAVS, []));
+let recent = readJSON(LS_RECENT, []);
+function toggleFav(id) {
+  if (favs.has(id)) favs.delete(id); else favs.add(id);
+  writeJSON(LS_FAVS, [...favs]); renderPalette();
+}
+function noteRecent(id) {
+  recent = [id, ...recent.filter(x => x !== id)].slice(0, 12);
+  writeJSON(LS_RECENT, recent);
+}
+function paletteItem(d) {
+  const it = document.createElement('div');
+  it.className = 'bitem' + (d.id === state.selId ? ' sel' : '');
+  it.title = `${d.name}\n${d.size.join('×')} cells · ${fmt.kg(d.mass)}` + (d.thrust ? `\n${fmt.N(d.thrust.f)} ${THRUSTER_TYPES[d.thrust.type].name}` : '') + (d.approx ? '\n≈ value from older game data' : '');
+  const col = '#' + blockColor(d).toString(16).padStart(6, '0');
+  const meta = d.thrust ? fmt.N(d.thrust.f) : d.inv ? fmt.L(d.inv) : fmt.kg(d.mass);
+  const on = favs.has(d.id);
+  it.innerHTML = `<span class="sw" style="background:${col}"></span><span>${d.name}${d.approx ? ' <span class="muted">≈</span>' : ''}</span><span class="meta">${d.size.join('×')} · ${meta}</span><span class="fav ${on ? 'on' : ''}" title="${on ? 'Remove from' : 'Add to'} favourites">${on ? '★' : '☆'}</span>`;
+  it.onclick = e => {
+    if (e.target.classList.contains('fav')) { e.stopPropagation(); toggleFav(d.id); return; }
+    selectBlockType(d.id); setTool('place');
+  };
+  return it;
+}
+function paletteGroup(pal, title, items, cls = '', key = title) {
+  if (!items.length) return;
+  const div = document.createElement('div'); div.className = 'cat ' + cls + (state.closedCats && state.closedCats.has(key) ? ' closed' : '');
+  div.innerHTML = `<div class="cathead">▾ ${title} <span class="muted">(${items.length})</span></div><div class="blist"></div>`;
+  div.firstChild.onclick = () => {
+    div.classList.toggle('closed');
+    state.closedCats = state.closedCats || new Set();
+    if (div.classList.contains('closed')) state.closedCats.add(key); else state.closedCats.delete(key);
+  };
+  for (const d of items) div.lastChild.appendChild(paletteItem(d));
+  pal.appendChild(div);
+}
 function renderPalette() {
   const q = $('#blockSearch').value.trim().toLowerCase();
-  const pal = $('#palette'); pal.innerHTML = '';
+  const pal = $('#palette'); const scroll = pal.scrollTop; pal.innerHTML = '';
   const defs = allDefsForGrid();
-  for (const cat of CATEGORIES) {
-    const items = defs.filter(d => d.cat === cat.id && (!q || d.name.toLowerCase().includes(q)));
-    if (!items.length) continue;
-    const div = document.createElement('div'); div.className = 'cat';
-    div.innerHTML = `<div class="cathead">▾ ${cat.name} <span class="muted">(${items.length})</span></div><div class="blist"></div>`;
-    div.firstChild.onclick = () => div.classList.toggle('closed');
-    const bl = div.lastChild;
-    for (const d of items) {
-      const it = document.createElement('div');
-      it.className = 'bitem' + (d.id === state.selId ? ' sel' : '');
-      it.title = `${d.name}\n${d.size.join('×')} cells · ${fmt.kg(d.mass)}` + (d.thrust ? `\n${fmt.N(d.thrust.f)} ${THRUSTER_TYPES[d.thrust.type].name}` : '') + (d.approx ? '\n≈ value from older game data' : '');
-      const col = '#' + blockColor(d).toString(16).padStart(6, '0');
-      const meta = d.thrust ? fmt.N(d.thrust.f) : d.inv ? fmt.L(d.inv) : fmt.kg(d.mass);
-      it.innerHTML = `<span class="sw" style="background:${col}"></span><span>${d.name}${d.approx ? ' <span class="muted">≈</span>' : ''}</span><span class="meta">${d.size.join('×')} · ${meta}</span>`;
-      it.onclick = () => { selectBlockType(d.id); setTool('place'); };
-      bl.appendChild(it);
-    }
-    pal.appendChild(div);
+  const match = d => !q || d.name.toLowerCase().includes(q);
+  const byId = new Map(defs.map(d => [d.id, d]));
+  const favItems = defs.filter(d => favs.has(d.id) && match(d)).sort((a, b) => a.name.localeCompare(b.name));
+  paletteGroup(pal, '★ Favourites', favItems, 'favs', 'favs');
+  if (!favItems.length && !q) {
+    const hint = document.createElement('div'); hint.className = 'small muted'; hint.style.margin = '2px 2px 8px';
+    hint.textContent = '★ Favourites: click the ☆ on any block to pin it here.'; pal.appendChild(hint);
   }
+  paletteGroup(pal, '⟲ Recently used', recent.map(id => byId.get(id)).filter(d => d && match(d) && !favs.has(d.id)).slice(0, 8), 'recent', 'recent');
+  for (const cat of CATEGORIES) paletteGroup(pal, cat.name, defs.filter(d => d.cat === cat.id && match(d)), '', cat.id);
+  pal.scrollTop = scroll;
+}
+function setLeftTab(t) {
+  $$('#leftTabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $('#tabBlocks').hidden = t !== 'blocks';
+  $('#tabTools').hidden = t !== 'tools';
+  try { localStorage.setItem(LS_TAB, t); } catch {}
 }
 function selectBlockType(id) {
   state.selId = id; renderPalette(); updateRotLabel();
@@ -1006,7 +1049,9 @@ function selectBlockType(id) {
 function setTool(t) {
   if (state.tool === 'paste' && t !== 'paste' && state.pasteIsMove) { state.pasteIsMove = false; }
   state.tool = t;
+  if (t === 'select' || t === 'paste') setLeftTab('tools');
   renderSelectionPanel();
+  updateRotLabel();
   $$('#toolSeg button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   showGhost(hover);
 }
@@ -1628,6 +1673,7 @@ function loadDesign(d, { keepUndo = false } = {}) {
   if (state.tool === 'paste') state.tool = 'place';
   if (!keepUndo) { state.undo = []; state.redo = []; }
   clearScene();
+  setShowAxes(design.type !== 'station');
   setupGridHelpers();
   $('#designName').value = design.name;
   $$('#gridSeg button').forEach(b => b.classList.toggle('on', b.dataset.grid === design.grid));
@@ -1816,6 +1862,8 @@ function initCustomModal() {
 // Wire up
 // ---------------------------------------------------------------------------
 function init() {
+  $$('#leftTabs button').forEach(b => b.onclick = () => setLeftTab(b.dataset.tab));
+  setLeftTab((() => { try { return localStorage.getItem(LS_TAB) || 'blocks'; } catch { return 'blocks'; } })());
   initEnvControls(); initCustomModal();
   $$('#toolSeg button').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $$('[data-rot]').forEach(b => b.onclick = () => {
@@ -1835,6 +1883,7 @@ function init() {
   $('#cutY').oninput = e => { state.cutY = Math.round(+e.target.value || 0); applyCut(); rebuildOverlays(); };
   $('#showArrows').onchange = e => { state.showArrows = e.target.checked; rebuildOverlays(); };
   $('#showCom').onchange = e => { state.showCom = e.target.checked; rebuildOverlays(); };
+  $('#showAxes').onchange = e => setShowAxes(e.target.checked);
   $('#blockSearch').oninput = renderPalette;
   $$('#viewBtns button[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
   $('#btnConv').onclick = () => setConveyorView(!state.convView);
@@ -1848,6 +1897,7 @@ function init() {
   });
   $$('#typeSeg button').forEach(b => b.onclick = () => {
     state.design.type = b.dataset.type;
+    setShowAxes(state.design.type !== 'station');   // bases don't need direction arrows; the toggle turns them back on
     $$('#typeSeg button').forEach(x => x.classList.toggle('on', x === b)); autosave(); queueAnalysis();
   });
   $('#btnUndo').onclick = undo; $('#btnRedo').onclick = redo;

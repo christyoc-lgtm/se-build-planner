@@ -49,6 +49,12 @@ When the selected block has conveyor ports, the ghost block shows them:
 
 Free ports on nearby blocks show in blue (large) and cyan (small). The left panel lists which way each port faces in the current orientation. **T** (or the ⛓ Auto-rotate button) turns the block so that the most ports connect at the spot you're pointing at. Thrusters keep their thrust direction.
 
+## Layout
+
+- **Floating toolbar** (top-left of the 3D view): Place, Erase, Pick, Paint and Select (keys 1–5). Underneath are the rotation buttons (Q W E / A S D, X reset, T auto-connect ports) and the block you're placing and how it's turned.
+- **Left panel tabs:** **Blocks** has the full-height block list with search. **Tools & view** has the selection actions, orientation and colour, symmetry, build plane and section, display toggles, and layers. Choosing the Select tool opens the Tools tab automatically.
+- **Favourites:** click ☆ on any block to pin it to a ★ Favourites group at the top of the list. Blocks you've recently placed appear under ⟲ Recently used. Both are remembered in your browser.
+
 ## Editing tools
 
 - **Select tool (5):** click blocks (Shift or Ctrl adds), or drag across an area; "spans all heights" grabs whole columns.
