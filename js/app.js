@@ -1,15 +1,15 @@
 // Space Engineers Build Planner — editor & UI
-import * as THREE from './vendor/three.module.min.js';
-import { OrbitControls } from './vendor/OrbitControls.js';
-import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js';
-import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js';
-import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt } from './calc.js';
-import { buildBlockObject, blockColor, makeArrow } from './geometry.js';
-import { analyseConveyors, worldPorts } from './conveyor.js';
-import { EXAMPLES, buildExampleShip } from './examples.js';
-import { flightAnalysis, planetOf } from './flight.js';
-import { encodeDesign, decodeDesign } from './share.js';
-import { buildSheetHtml, SHEET_CSS } from './sheet.js';
+import * as THREE from './vendor/three.module.min.js?v=20261107-1';
+import { OrbitControls } from './vendor/OrbitControls.js?v=20261107-1';
+import { parsePorts, BLOCKS, CATEGORIES, CAT_COLORS, PLANETS, ITEMS, INVENTORY_MULTIPLIERS, THRUSTER_TYPES, DIRS, GRID, G0, thrusterEffectiveness } from './data.js?v=20261107-1';
+import { ROTS, rotateAbout, mirrorRot, rotatedSize, applyRot, rotIndex } from './rotations.js?v=20261107-1';
+import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt } from './calc.js?v=20261107-1';
+import { buildBlockObject, blockColor, makeArrow } from './geometry.js?v=20261107-1';
+import { analyseConveyors, worldPorts } from './conveyor.js?v=20261107-1';
+import { EXAMPLES, buildExampleShip } from './examples.js?v=20261107-1';
+import { flightAnalysis, planetOf } from './flight.js?v=20261107-1';
+import { encodeDesign, decodeDesign } from './share.js?v=20261107-1';
+import { buildSheetHtml, SHEET_CSS } from './sheet.js?v=20261107-1';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1037,8 +1037,8 @@ function renderPalette() {
 }
 function setLeftTab(t) {
   $$('#leftTabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  $('#tabBlocks').hidden = t !== 'blocks';
-  $('#tabTools').hidden = t !== 'tools';
+  if ($('#tabBlocks')) $('#tabBlocks').hidden = t !== 'blocks';
+  if ($('#tabTools')) $('#tabTools').hidden = t !== 'tools';
   try { localStorage.setItem(LS_TAB, t); } catch {}
 }
 function selectBlockType(id) {
@@ -1963,4 +1963,12 @@ function init() {
 // Expose a small API for debugging / tests
 window.SEBP = { state, rotFor, setSelection, rotateGroup, mirrorSel, copySel, pasteStart, pasteAt, deleteSel, nudgeSel, openShare, openCompare, openSheet, encodeDesign, decodeDesign, flight: () => { const a = analyse(state.design, S()); return flightAnalysis(state.design, S(), a); }, autoRotate: () => autoRotate(), setHover: h => { hover = h; showGhost(h); }, analyseConveyors: () => analyseConveyors(state.design), analyse: () => analyse(state.design, S()), loadDesign, buildExample, serialise, placeBlocks, placementAt };
 
-init();
+try { init(); }
+catch (err) {
+  console.error(err);
+  // Usually a half-updated browser cache (new and old files mixed). Tell the user how to fix it.
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:999;background:#3b2300;color:#ffd8a8;border:1px solid #f0883e;padding:14px 18px;border-radius:8px;max-width:560px;font:14px/1.5 Segoe UI,sans-serif;box-shadow:0 8px 30px #000a';
+  d.innerHTML = '<b>The planner didn\'t start properly.</b><br>This usually means it was just updated and your browser is mixing old and new files. Press <b>Ctrl + Shift + R</b> (or Ctrl + F5) to reload. Your saved designs are kept.<br><span style="opacity:.7;font-size:12px">' + String(err && err.message || err).replace(/</g, '&lt;') + '</span>';
+  document.body.appendChild(d);
+}

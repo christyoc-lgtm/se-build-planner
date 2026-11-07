@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="app-version" content="20261107-1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Space Engineers Build Planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1l7 7-7 7-7-7z' fill='%23f0883e'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20261107-1">
 </head>
 <body>
 <header id="topbar">
@@ -48,18 +49,23 @@
 <main id="layout">
   <!-- ============ LEFT: tools & palette ============ -->
   <aside id="left" class="panel">
-    <section>
-      <h3>Tool</h3>
-      <div class="seg wide" id="toolSeg">
-        <button data-tool="place" class="on" title="Place (1)">Place</button>
-        <button data-tool="erase" title="Erase (2)">Erase</button>
-        <button data-tool="pick" title="Pick block (3)">Pick</button>
-        <button data-tool="paint" title="Paint (4)">Paint</button>
-        <button data-tool="select" title="Select (5)">Select</button>
-      </div>
-      <div class="row small muted">Shift + drag with Place to fill a box. Select: click blocks or drag an area.</div>
-    </section>
+    <div class="tabs" id="leftTabs">
+      <button data-tab="blocks" class="on">▦ Blocks</button>
+      <button data-tab="tools">⚙ Tools &amp; view</button>
+    </div>
 
+    <div class="tabpane grow" id="tabBlocks">
+    <section class="grow">
+      <div class="row" style="margin-top:0">
+        <input id="blockSearch" type="search" placeholder="Search blocks…" style="flex:1">
+        <button class="mini" id="btnCustom" title="Add a custom / modded block">+ Custom</button>
+      </div>
+      <div class="small muted" style="margin:4px 0 2px">Click ☆ to add a block to Favourites.</div>
+      <div id="palette"></div>
+    </section>
+    </div>
+
+    <div class="tabpane" id="tabTools" hidden>
     <section id="selSection" style="display:none">
       <h3>Selection</h3>
       <div id="selInfo" class="small"></div>
@@ -82,7 +88,7 @@
     </section>
 
     <section>
-      <h3>Orientation <span class="muted small" id="rotLabel"></span></h3>
+      <h3>Orientation <span class="muted small" id="rotLabel2"></span></h3>
       <div class="rotgrid three">
         <button data-rot="z,1" title="Roll left (Q)"><kbd>Q</kbd> ↺ Roll</button>
         <button data-rot="x,1" title="Tilt front up (W)"><kbd>W</kbd> ↑ Up</button>
@@ -139,17 +145,32 @@
       <h3>Layers</h3>
       <div id="layersList"></div>
     </section>
-
-    <section class="grow">
-      <h3>Blocks <button class="mini right" id="btnCustom" title="Add a custom / modded block">+ Custom</button></h3>
-      <input id="blockSearch" type="search" placeholder="Search blocks…">
-      <div id="palette"></div>
-    </section>
+    </div>
   </aside>
 
   <!-- ============ CENTRE: 3D viewport ============ -->
   <section id="viewport">
     <canvas id="c3d"></canvas>
+    <div id="toolbar">
+      <div class="tb seg" id="toolSeg">
+        <button data-tool="place" class="on" title="Place blocks (1). Shift+drag fills a box"><span class="ic">✚</span>Place<kbd>1</kbd></button>
+        <button data-tool="erase" title="Erase blocks (2)"><span class="ic">✖</span>Erase<kbd>2</kbd></button>
+        <button data-tool="pick" title="Pick a block: copies its type and orientation, shows its info (3)"><span class="ic">⌖</span>Pick<kbd>3</kbd></button>
+        <button data-tool="paint" title="Paint blocks with the chosen colour (4)"><span class="ic">🖌</span>Paint<kbd>4</kbd></button>
+        <button data-tool="select" title="Select blocks: click, or drag an area (5)"><span class="ic">⬚</span>Select<kbd>5</kbd></button>
+      </div>
+      <div class="tb seg rot" title="Rotate the block being placed (or the selection)">
+        <button data-rot="z,1" title="Roll left (Q)">↺<kbd>Q</kbd></button>
+        <button data-rot="x,1" title="Tilt front up (W)">↑<kbd>W</kbd></button>
+        <button data-rot="z,-1" title="Roll right (E)">↻<kbd>E</kbd></button>
+        <button data-rot="y,1" title="Turn front left (A)">←<kbd>A</kbd></button>
+        <button data-rot="x,-1" title="Tilt front down (S)">↓<kbd>S</kbd></button>
+        <button data-rot="y,-1" title="Turn front right (D)">→<kbd>D</kbd></button>
+        <button data-rot="reset" title="Reset orientation (X)">⟲<kbd>X</kbd></button>
+        <button data-rot="auto" title="Auto-rotate so conveyor ports connect (T)">⛓<kbd>T</kbd></button>
+      </div>
+      <div class="tb label" id="rotLabel"></div>
+    </div>
     <div id="hud">
       <div id="hoverInfo"></div>
     </div>
@@ -305,6 +326,6 @@
 
 <div id="toast"></div>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=20261107-1"></script>
 </body>
 </html>
