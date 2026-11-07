@@ -33,9 +33,9 @@ export function worldPorts(b, def) {
 const ROLE_NAMES = {
   cargo: 'Cargo container', connector: 'Connector', h2tank: 'Hydrogen tank', o2tank: 'Oxygen tank', gasgen: 'O2/H2 generator',
   h2user: 'Hydrogen engine', h2thrust: 'Hydrogen thruster', reactor: 'Reactor', cockpit: 'Cockpit', drill: 'Drill',
-  welder: 'Welder', grinder: 'Grinder', collector: 'Collector', refinery: 'Refinery', assembler: 'Assembler',
+  welder: 'Welder', grinder: 'Grinder', collector: 'Collector', refinery: 'Refinery', assembler: 'Assembler', weapon: 'Weapon', chute: 'Parachute',
 };
-const INVENTORY_ROLES = new Set(['cargo', 'connector', 'reactor', 'cockpit', 'drill', 'welder', 'grinder', 'collector', 'refinery', 'assembler', 'gasgen']);
+const INVENTORY_ROLES = new Set(['cargo', 'connector', 'reactor', 'cockpit', 'drill', 'welder', 'grinder', 'collector', 'refinery', 'assembler', 'gasgen', 'weapon', 'chute']);
 // Blocks that move components or large items and so need a LARGE route to the cargo
 const NEEDS_LARGE = new Set(['assembler', 'welder', 'grinder', 'connector', 'collector']);
 

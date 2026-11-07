@@ -39,6 +39,18 @@ const SHAPES = {
     [[0,1,2,3],[1,4,5,2],[3,2,5,6],[0,1,4],[0,3,6],[4,5,6],[0,4,6]]),
 };
 
+// Half block: bottom half of the cell
+SHAPES.half = () => { const g = new THREE.BoxGeometry(1, 0.5, 1); g.translate(0, -0.25, 0); return g; };
+// 2:1 slopes. Base = lower-front half filled + wedge up to the back top; Tip = low wedge.
+SHAPES.slope2base = () => convex(
+  [[-h,-h,-h],[h,-h,-h],[h,-h,h],[-h,-h,h],[-h,0,-h],[h,0,-h],[-h,h,h],[h,h,h]],
+  [[0,1,2,3],[0,1,5,4],[3,2,7,6],[4,5,7,6],[0,3,6,4],[1,2,7,5]]);
+SHAPES.slope2tip = () => convex(
+  [[-h,-h,-h],[h,-h,-h],[h,-h,h],[-h,-h,h],[-h,0,h],[h,0,h]],
+  [[0,1,2,3],[3,2,5,4],[0,1,5,4],[0,3,4],[1,2,5]]);
+// Armour panel: thin slab on the block's bottom face
+SHAPES.panel = () => { const g = new THREE.BoxGeometry(1, 0.16, 1); g.translate(0, -0.42, 0); return g; };
+
 const geoCache = new Map();
 function cached(key, fn) { if (!geoCache.has(key)) geoCache.set(key, fn()); return geoCache.get(key); }
 const matCache = new Map();
@@ -108,6 +120,41 @@ export function buildBlockObject(def, b, cell, { ghost = false, ghostOk = true }
       glow.position.z = sz / 2 - nozLen * 0.85;
       inner.add(glow);
     }
+  } else if (shape === 'turret') {
+    // base ring + dome + barrels pointing local -Z
+    const cg = cached('cyl', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 24));
+    const base = new THREE.Mesh(cg, ghost ? m : mat(0x484f58));
+    base.scale.set(sx * 0.9, sy * 0.3, sz * 0.9); base.position.y = -sy / 2 + sy * 0.15; inner.add(base);
+    const dome = new THREE.Mesh(cached('sph', () => new THREE.SphereGeometry(0.5, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2)), m);
+    dome.scale.set(sx * 0.75, sy * 1.1, sz * 0.75); dome.position.y = -sy / 2 + sy * 0.3; inner.add(dome);
+    const bar = new THREE.Mesh(cg, ghost ? m : mat(0x30363d, { metalness: 0.6 }));
+    bar.rotation.x = Math.PI / 2; bar.scale.set(sx * 0.12, sz * 0.75, sx * 0.12);
+    bar.position.set(0, -sy / 2 + sy * 0.55, -sz * 0.45); inner.add(bar);
+  } else if (shape === 'gun') {
+    const box = cached('box', SHAPES.cube);
+    const body = new THREE.Mesh(box, m); body.scale.set(sx * 0.9, sy * 0.9, sz * 0.55); body.position.z = sz * 0.2; inner.add(body); addEdges(box, body);
+    const cg = cached('cyl', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 16));
+    const bar = new THREE.Mesh(cg, ghost ? m : mat(0x30363d, { metalness: 0.6 }));
+    bar.rotation.x = Math.PI / 2; bar.scale.set(Math.min(sx, sy) * 0.35, sz * 0.45, Math.min(sx, sy) * 0.35);
+    bar.position.z = -sz / 2 + sz * 0.225; inner.add(bar);
+  } else if (shape === 'solar') {
+    const box = cached('box', SHAPES.cube);
+    const frame = new THREE.Mesh(box, ghost ? m : mat(0x8b949e)); frame.scale.set(sx, sy, sz * 0.18); frame.position.z = sz * 0.4; inner.add(frame); addEdges(box, frame);
+    const cells = new THREE.Mesh(box, ghost ? m : mat(0x1f3a8a, { metalness: 0.5, roughness: 0.25, emissive: 0x0b1d4d, emissiveIntensity: 0.4 }));
+    cells.scale.set(sx * 0.94, sy * 0.94, sz * 0.06); cells.position.z = sz * 0.29; inner.add(cells);
+  } else if (shape === 'wheel') {
+    // suspension block at local -X, tyre on +X side (axis along X)
+    const box = cached('box', SHAPES.cube);
+    const sus = new THREE.Mesh(box, m); sus.scale.set(sx / 2 * 0.9, Math.min(sy, 1) * 0.9, Math.min(sz, 1) * 0.9); sus.position.x = -sx / 4; inner.add(sus); addEdges(box, sus);
+    const tg = cached('tyre', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 28));
+    const tyre = new THREE.Mesh(tg, ghost ? m : mat(0x1c1f24, { roughness: 0.95, metalness: 0 }));
+    tyre.rotation.z = Math.PI / 2; tyre.scale.set(sy * 0.98, sx / 2 * 0.9, sz * 0.98); tyre.position.x = sx / 4; inner.add(tyre);
+    const hub = new THREE.Mesh(tg, ghost ? m : mat(0x8b949e)); hub.rotation.z = Math.PI / 2;
+    hub.scale.set(sy * 0.45, sx / 2 * 0.95, sz * 0.45); hub.position.x = sx / 4; inner.add(hub);
+  } else if (shape === 'gear') {
+    const box = cached('box', SHAPES.cube);
+    const body = new THREE.Mesh(box, m); body.scale.set(sx * 0.9, sy * 0.6, sz * 0.9); body.position.y = sy * 0.2; inner.add(body); addEdges(box, body);
+    const pad = new THREE.Mesh(box, ghost ? m : mat(0xe3b341)); pad.scale.set(sx * 0.95, sy * 0.15, sz * 0.95); pad.position.y = -sy / 2 + sy * 0.075; inner.add(pad);
   } else if (shape === 'tank') {
     const box = cached('box', SHAPES.cube);
     const cg = cached('cyl', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 24));

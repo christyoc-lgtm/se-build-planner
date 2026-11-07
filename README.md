@@ -49,6 +49,33 @@ When the selected block has conveyor ports, the ghost block shows them:
 
 Free ports on nearby blocks show in blue (large) and cyan (small). The left panel lists which way each port faces in the current orientation. **T** (or the ⛓ Auto-rotate button) turns the block so that the most ports connect at the spot you're pointing at. Thrusters keep their thrust direction.
 
+## Editing tools
+
+- **Select tool (5):** click blocks (Shift or Ctrl adds), or drag across an area; "spans all heights" grabs whole columns.
+- **Copy / Cut / Paste / Duplicate / Delete:** Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+D / Del. While pasting, W/S/A/D/Q/E rotate the clipboard and Esc stops pasting.
+- **Move (M):** picks up the selection to place it somewhere else; Esc puts it back.
+- **Rotate a selected group:** W/S/A/D/Q/E turn it about its centre; turning back restores the exact position.
+- **Nudge:** the arrow keys move the selection one cell; PgUp/PgDn move it up and down.
+- **Flip in place** along X/Y/Z, or **Mirror copy** across the symmetry plane set in the Symmetry section.
+- **Layers:** one per block category. Hide one to see inside, lock it (locked blocks can't be erased, painted or selected), Solo it, or select its blocks.
+- **Repaint…:** recolours every block, the selection, a layer, a block type, or every block of one colour.
+- **New blocks:** half blocks, 2:1 slopes and panels (light and heavy); gatling, rocket, interior, assault-cannon and autocannon turrets; gatling gun and rocket launcher; warhead and decoy; solar panels; wheel suspensions with wheels; parachute hatches; artificial mass; laser antenna; ore detector; Prototech jump drive; passenger seat; LCD; air vent; oxygen farm; cryo chamber.
+
+## Flight analysis
+
+- **Speed & stopping:** for each direction, the time and distance to the speed cap and the stopping distance (using the opposite thrusters), plus climb and descent. Landing advice gives the fastest safe descent speed from 50, 100, 250, 500 and 1,000 m.
+- **Endurance:** hover time on batteries or hydrogen, and full-thrust time.
+- **Reaching space:** a simulated straight-up climb from the planet's surface. Gravity falls off above the hills (EarthLike: space starts at 42.9 km), and the air thins to nothing at the top of the atmosphere, so atmospheric thrusters fade and ion thrusters strengthen. It reports whether the ship gets out, how long it takes, the hydrogen and battery used, or the altitude where it stalls.
+- **Jump drive:** range when empty and full. Each drive's range is cut in proportion once the ship is heavier than the drive's limit.
+- **Gyroscopes:** estimated turn acceleration for pitch, yaw and roll, plus the time for a 90° turn.
+- **Landing:** whether the centre of mass sits inside the landing gear's footprint (or the lowest blocks'), and the slope angle it would tip on. Also checks parachute capacity against the full ship's mass.
+
+## Sharing
+
+- **Share ▾ → Copy share link:** the whole design is compressed into the URL (`#design=…`). Opening the link loads it; the visitor's previous work is kept under Designs.
+- **Compare designs:** pick any two from the current design, saved designs and examples, then compare them side by side in the same environment. Differences are marked better or worse. Designs ▾ → *Save current as variant…* keeps several versions of a ship.
+- **Build sheet:** a printable page with four views, key stats, a parts checklist and floor-by-floor top-down plans (forward at the top, numbered blocks, thruster directions). Print it or save it as a PDF, or download it as HTML.
+
 ## Running it
 
 It's a static site (HTML, CSS and ES-module JavaScript, with three.js bundled in `js/vendor`), so it needs no build step and no internet connection.
@@ -68,6 +95,9 @@ Designs autosave in your browser. **Save** keeps named designs in browser storag
 | Orbit / pan / zoom | Right-drag / middle-drag (or Shift+right) / wheel |
 | Rotate block | W / S tilt front up / down · A / D turn left / right · Q / E roll left / right · X resets (R / F / V also work) |
 | Build plane up/down | ] / [ (or PageUp / PageDown) |
+| Select tool / select all | 5 / Ctrl+A |
+| Copy / cut / paste / duplicate / delete | Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+D / Del |
+| Move selection / nudge | M / arrow keys, PgUp/PgDn |
 | Conveyor view | C |
 | Auto-rotate to connect ports | T |
 | Undo / redo / save | Ctrl+Z / Ctrl+Y / Ctrl+S |

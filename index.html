@@ -30,8 +30,17 @@
     <div class="menu" id="designsMenu"></div>
   </div>
   <button id="btnSave" class="primary" title="Save to this browser (Ctrl+S)">Save</button>
-  <button id="btnExport" title="Download design as .json">Export</button>
-  <button id="btnImport" title="Load a .json design">Import</button>
+  <div class="dropdown">
+    <button id="btnShare">Share ▾</button>
+    <div class="menu" id="shareMenu">
+      <div class="item" data-sh="link"><span>🔗 Copy share link…</span><span class="muted small">design in the URL</span></div>
+      <div class="item" data-sh="compare"><span>⚖ Compare designs…</span><span class="muted small">side by side</span></div>
+      <div class="item" data-sh="sheet"><span>🖨 Build sheet…</span><span class="muted small">floors + parts list</span></div>
+      <div class="item" data-sh="export"><span>⬇ Export .json…</span></div>
+      <div class="item" data-sh="import"><span>⬆ Import .json…</span></div>
+    </div>
+  </div>
+  <button id="btnExport" hidden></button><button id="btnImport" hidden></button>
   <input type="file" id="fileInput" accept=".json,application/json" hidden>
   <button id="btnHelp">?</button>
 </header>
@@ -46,8 +55,30 @@
         <button data-tool="erase" title="Erase (2)">Erase</button>
         <button data-tool="pick" title="Pick block (3)">Pick</button>
         <button data-tool="paint" title="Paint (4)">Paint</button>
+        <button data-tool="select" title="Select (5)">Select</button>
       </div>
-      <div class="row small muted">Shift + drag with Place to fill a box.</div>
+      <div class="row small muted">Shift + drag with Place to fill a box. Select: click blocks or drag an area.</div>
+    </section>
+
+    <section id="selSection" style="display:none">
+      <h3>Selection</h3>
+      <div id="selInfo" class="small"></div>
+      <div class="btngrid">
+        <button data-sel="copy" data-needsel title="Ctrl+C">Copy</button>
+        <button data-sel="cut" data-needsel title="Ctrl+X">Cut</button>
+        <button data-sel="paste" id="selPaste" title="Ctrl+V">Paste</button>
+        <button data-sel="dup" data-needsel title="Ctrl+D: copy and paste">Duplicate</button>
+        <button data-sel="move" data-needsel title="M: pick up and place elsewhere">Move</button>
+        <button data-sel="del" data-needsel title="Delete">Delete</button>
+      </div>
+      <div class="small muted" style="margin-top:6px">Rotate with W/S · A/D · Q/E (or the Orientation buttons). Nudge with arrow keys, PgUp/PgDn for height.</div>
+      <div class="lbl">Flip in place</div>
+      <div class="btngrid three"><button data-sel="fx" data-needsel>↔ X</button><button data-sel="fy" data-needsel>↕ Y</button><button data-sel="fz" data-needsel>⤢ Z</button></div>
+      <div class="lbl">Mirror copy across the symmetry plane</div>
+      <div class="btngrid three"><button data-sel="mx" data-needsel>Mirror X</button><button data-sel="my" data-needsel>Mirror Y</button><button data-sel="mz" data-needsel>Mirror Z</button></div>
+      <div class="btngrid three" style="margin-top:6px"><button data-sel="all" title="Ctrl+A">Select all</button><button data-sel="same" data-needsel>Same type</button><button data-sel="none">Clear</button></div>
+      <div class="row"><button data-sel="paint" data-needsel>Paint selection with colour</button>
+        <label class="chk small"><input type="checkbox" id="selAllHeights" checked> Area select spans all heights</label></div>
     </section>
 
     <section>
@@ -68,6 +99,7 @@
         <label>Colour</label>
         <input type="color" id="colorPick" value="#b1bac4">
         <label class="chk"><input type="checkbox" id="useColor"> use</label>
+        <button class="mini" id="btnRepaint" title="Repaint many blocks at once">Repaint…</button>
       </div>
     </section>
 
@@ -100,6 +132,11 @@
         <label class="chk"><input type="checkbox" id="showArrows" checked> Thrust arrows</label>
         <label class="chk"><input type="checkbox" id="showCom" checked> Centre of mass</label>
       </div>
+    </section>
+
+    <section>
+      <h3>Layers</h3>
+      <div id="layersList"></div>
     </section>
 
     <section class="grow">
@@ -161,6 +198,7 @@
         <div class="inline"><input type="range" id="fillPct" min="0" max="100" step="5"><span id="fillVal"></span></div>
         <label>Extra mass (kg)</label><input type="number" id="extraMass" step="100" min="0" title="Items not modelled: subgrids, wheels, ammo, uranium…">
         <label>Target TWR</label><input type="number" id="targetTwr" step="0.1" min="1" title="Thrust-to-weight ratio you want with full cargo (1.0 = just hovers)">
+        <label>Speed cap (m/s)</label><input type="number" id="speedCap" step="5" min="1" title="World speed limit: 100 m/s in vanilla">
       </div>
       <label class="chk small"><input type="checkbox" id="fillMinor"> Also fill connectors, collectors &amp; drill inventories</label>
       <div class="small muted" id="envNote"></div>
@@ -168,6 +206,9 @@
 
     <section id="massSection"></section>
     <section id="thrustSection"></section>
+    <section id="speedSection"></section>
+    <section id="enduranceSection"></section>
+    <section id="handlingSection"></section>
     <section id="conveyorSection"></section>
     <section id="suggestSection"></section>
     <section id="planetSection"></section>
@@ -192,6 +233,10 @@
       <li>The ship's <b>Forward</b> is −Z (red arrow) and <b>Up</b> is +Y (green arrow). Build the cockpit facing the red arrow.</li>
       <li><b>C</b> (or ⛓ Conveyor view) shows the conveyor systems: blocks without ports fade out, each connected system gets its own colour, port markers show large (big square) and small (small square) ports, and problem blocks get a red/orange outline. The <b>Conveyor systems</b> panel lists the checks; “Show” jumps to the blocks involved.</li>
       <li>While placing a block with conveyor ports, its ports are drawn on the ghost: <span style="color:#3fb950">green</span> = will connect, white = open, <span style="color:#d29922">amber</span> = blocked, <span style="color:#ff3b30">red</span> = large/small mismatch. Free ports on nearby blocks show in blue (large) and cyan (small). The left panel lists which way each port faces, and <b>T</b> rotates the block automatically so the most ports connect (thrusters keep their thrust direction).</li>
+      <li><b>Select (5)</b>: click a block (Shift/Ctrl adds), or drag across an area (tick "spans all heights" to grab whole columns). Then Copy/Cut/Paste (Ctrl+C/X/V), Duplicate (Ctrl+D), Move (M), Delete, rotate the group with W/S/A/D/Q/E, nudge with the arrow keys and PgUp/PgDn, flip it, or make a mirrored copy across the symmetry plane. While pasting, W/S/A/D/Q/E rotate the clipboard and Esc stops (or cancels a move).</li>
+      <li><b>Layers</b> group blocks by type (armour, thrusters, conveyors…). Hide a layer to see inside, lock it so it can't be erased, painted or selected, or Solo it.</li>
+      <li><b>Repaint…</b> recolours every block, the selection, a layer, a block type, or every block of one colour in one go.</li>
+      <li><b>Share ▾</b>: copy a link that contains the whole design, compare two designs side by side, or open a printable build sheet with views, a parts checklist and floor-by-floor plans.</li>
       <li>Ctrl+Z / Ctrl+Y undo and redo. Ctrl+S saves to this browser. Export/Import moves designs as .json files.</li>
     </ul>
     <h4>How the numbers are worked out</h4>
@@ -206,6 +251,9 @@
       <li>Inertial dampeners use 100% of a thruster's thrust, and Space Engineers applies thrust at the centre of mass, so where a thruster sits doesn't cause torque. The centre of mass is still shown to help balance gyroscopes and landing gear.</li>
       <li>Hydrogen and oxygen in tanks are treated as weightless, as the game makes them practically massless.</li>
       <li><b>Conveyors</b>: two blocks connect when their ports touch face to face. Large↔large and small↔small connect; a large port against a small one does not, so put a Conveyor Converter between them. Hydrogen, oxygen, ore and ingots travel through any connection, but components and large items need an all-large route. The checks: every hydrogen thruster or engine must reach a hydrogen tank, every tank should reach a Connector for refuelling, inventory blocks should share the main cargo system, and component users (assembler, welder, grinder, connector) need large conveyors to the cargo. Port layouts are simplified; if a connection is critical, check the real block in-game.</li>
+      <li><b>Speed &amp; stopping</b>: time and distance to the speed cap, and stopping distance using the opposite thrusters. Climbing uses Up thrust minus gravity; landing speeds tell you how fast you can descend and still stop in time.</li>
+      <li><b>Reaching space</b> is simulated: full thrust straight up, holding at the speed cap, with gravity falling off above the planet's hills and the air thinning to nothing at the top of the atmosphere, which weakens atmospheric thrusters (and strengthens ion ones). It counts hydrogen and battery use.</li>
+      <li><b>Turning</b> is estimated as gyroscope torque ÷ the ship's rotational inertia (from where its mass sits). <b>Landing stability</b> checks whether the centre of mass sits inside the footprint of your landing gear (or the lowest blocks). <b>Jump range</b>: each drive's range is cut in proportion once the ship is heavier than the drive's limit.</li>
       <li>Not modelled: subgrids (rotors, pistons, wheels: add their mass as Extra mass), aerodynamic drag, the speed limit, and thrust override limits.</li>
     </ul>
     <p class="small muted">Data: spaceengineers.wiki.gg block pages &amp; Thruster Comparison, 343N/spaceengineers-thrust-calc. Blocks marked ≈ use older game data and may be slightly off. Add modded blocks with “+ Custom”.</p>

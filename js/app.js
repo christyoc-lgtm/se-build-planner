@@ -7,6 +7,9 @@ import { analyse, getDef, thrustersNeeded, thrustDirOf, fmt } from './calc.js';
 import { buildBlockObject, blockColor, makeArrow } from './geometry.js';
 import { analyseConveyors, worldPorts } from './conveyor.js';
 import { EXAMPLES, buildExampleShip } from './examples.js';
+import { flightAnalysis, planetOf } from './flight.js';
+import { encodeDesign, decodeDesign } from './share.js';
+import { buildSheetHtml, SHEET_CSS } from './sheet.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -17,7 +20,7 @@ const LS_DESIGNS = 'sebp.designs.v1', LS_CURRENT = 'sebp.current.v1', LS_CUSTOM 
 // ---------------------------------------------------------------------------
 const defaultSettings = () => ({
   planetId: 'earth', g: 1, density: 1, invMult: 1, itemId: 'ore', customLPerKg: 0.37,
-  fillPct: 100, fillMinor: false, extraMass: 0, targetTwr: 1.5, suggestDir: 'up',
+  fillPct: 100, fillMinor: false, extraMass: 0, targetTwr: 1.5, suggestDir: 'up', speedCap: 100,
 });
 const newDesign = (grid = 'L') => ({
   format: 'se-build-planner', version: 1, name: 'Untitled ship', grid, type: 'ship',
@@ -32,6 +35,7 @@ const state = {
   layerY: 0, cutOn: false, cutY: 0, showArrows: true, showCom: true,
   undo: [], redo: [], dirty: false,
   convView: false, focusUid: null,
+  selection: new Set(), clipboard: null, pasteIsMove: false, layers: {}, selAllHeights: true,
 };
 const S = () => state.design.settings;
 const cellSize = () => GRID[state.design.grid].cell;
@@ -77,7 +81,7 @@ function commit(mutator) {
   state.redo = [];
   changed();
 }
-function restore(snap) { state.design.blocks = withUids(JSON.parse(snap)); changed(); }
+function restore(snap) { state.design.blocks = withUids(JSON.parse(snap)); state.selection.clear(); changed(); }
 function undo() { if (!state.undo.length) return; state.redo.push(snapshot()); restore(state.undo.pop()); }
 function redo() { if (!state.redo.length) return; state.undo.push(snapshot()); restore(state.redo.pop()); }
 
@@ -161,14 +165,19 @@ function syncScene() {
   }
   for (const [uid, o] of objByUid) if (!present.has(uid)) { blockRoot.remove(o); objByUid.delete(uid); }
   applyCut();
-  if (state.convView) { lastConv = analyseConveyors(state.design); applyConveyorView(); }
+  if (state.convView) lastConv = analyseConveyors(state.design);
+  applyConveyorView();
   rebuildOverlays();
 }
 function clearScene() { for (const o of objByUid.values()) blockRoot.remove(o); objByUid.clear(); }
+const layerOf = def => (def && def.cat) || 'misc';
+const isHidden = def => !!(state.layers[layerOf(def)] && state.layers[layerOf(def)].hidden);
+const isLocked = def => !!(state.layers[layerOf(def)] && state.layers[layerOf(def)].locked);
 function applyCut() {
   for (const b of state.design.blocks) {
     const o = objByUid.get(b.uid); if (!o) continue;
-    o.visible = !state.cutOn || b.p[1] <= state.cutY;
+    const def = getDef(state.design, b.id);
+    o.visible = (!state.cutOn || b.p[1] <= state.cutY) && !isHidden(def);
   }
 }
 
@@ -217,6 +226,15 @@ function convMat(color, opacity = 1) {
     transparent: opacity < 1, opacity, depthWrite: opacity >= 1 }));
   return convMats.get(k);
 }
+const tintCache = new Map();
+function tintMat(mt) {
+  if (!tintCache.has(mt.uuid)) {
+    const c = mt.clone();
+    if (c.emissive) { c.emissive = new THREE.Color(0xff8c00); c.emissiveIntensity = 0.55; } else c.color = new THREE.Color(0xffb44d);
+    tintCache.set(mt.uuid, c);
+  }
+  return tintCache.get(mt.uuid);
+}
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0x8b949e, transparent: true, opacity: 0.07, depthWrite: false });
 function applyConveyorView() {
   const cv = lastConv;
@@ -231,8 +249,12 @@ function applyConveyorView() {
         m = st === 'error' ? convMat(0xf85149) : convMat(NET_COLORS[net % NET_COLORS.length], st === 'isolated' ? 0.55 : 1);
       }
     }
+    const sel = state.selection.has(uid);
     o.traverse(n => {
-      if (n.isMesh) { if (!n.userData.origMat) n.userData.origMat = n.material; n.material = m || n.userData.origMat; }
+      if (n.isMesh) {
+        if (!n.userData.origMat) n.userData.origMat = n.material;
+        n.material = m ? (sel ? tintMat(m) : m) : (sel ? tintMat(n.userData.origMat) : n.userData.origMat);
+      }
       if (n.isLineSegments) n.visible = showEdges;
     });
   }
@@ -368,6 +390,15 @@ function targetCell(h) {
   return c;
 }
 
+function placeBox(h, ws) {
+  const c = targetCell(h), n = h.normal, p = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    if (n[i] > 0) p[i] = c[i];
+    else if (n[i] < 0) p[i] = c[i] - ws[i] + 1;
+    else p[i] = c[i] - Math.floor((ws[i] - 1) / 2);
+  }
+  return p;
+}
 function placementAt(h, defId = state.selId, rot = state.rot) {
   const def = getDef(state.design, defId); if (!def) return null;
   const ws = rotatedSize(rot, def.size);
@@ -414,6 +445,7 @@ function placeBlocks(list) {
 function eraseAt(h) {
   const b = state.design.blocks.find(x => x.uid === h.uid); if (!b) return;
   const def = getDef(state.design, b.id);
+  if (isLocked(def)) { toast(`${CATEGORIES.find(c => c.id === layerOf(def)).name} layer is locked`); return; }
   const ws = rotatedSize(b.r, def.size);
   const victims = new Set([b.uid]);
   for (const v of mirroredVariants({ p: b.p, r: b.r, ws })) {
@@ -424,6 +456,8 @@ function eraseAt(h) {
 }
 
 function paintAt(h) {
+  const b0 = state.design.blocks.find(x => x.uid === h.uid);
+  if (b0 && isLocked(getDef(state.design, b0.id))) { toast('That layer is locked'); return; }
   commit(() => {
     const b = state.design.blocks.find(x => x.uid === h.uid); if (!b) return;
     const idx = state.design.blocks.indexOf(b);
@@ -444,6 +478,20 @@ function showGhost(h) {
   ghostGroup.clear();
   if (!h) return;
   const c = cellSize();
+  if (state.tool === 'select') {
+    if (selDrag && selDrag.moved) {
+      const [mn, mx] = selBoxCells(selDrag.start, selCellOf(h));
+      const lo = state.selAllHeights ? -60 : mn[1], hi = state.selAllHeights ? 60 : mx[1] + 1;
+      const box = new THREE.Box3(new THREE.Vector3(mn[0] * c, lo * c, mn[2] * c), new THREE.Vector3((mx[0] + 1) * c, hi * c, (mx[2] + 1) * c));
+      ghostGroup.add(new THREE.Box3Helper(box, 0xffb44d));
+      $('#stCell').textContent = `Area ${mx[0] - mn[0] + 1} × ${mx[2] - mn[2] + 1}` + (state.selAllHeights ? ' (all heights)' : ` × ${mx[1] - mn[1] + 1}`);
+    } else if (h.kind === 'block') {
+      const o = objByUid.get(h.uid);
+      if (o) ghostGroup.add(new THREE.Box3Helper(new THREE.Box3().setFromObject(o), 0xffb44d));
+    }
+    return;
+  }
+  if (state.tool === 'paste') { showPasteGhost(h); return; }
   if (state.tool === 'place') {
     const list = fillStart ? boxFillList(fillStart, h) : [placementAt(h)].filter(Boolean);
     let n = 0;
@@ -551,6 +599,225 @@ function autoRotate() {
   toast(`Rotated: ${best.con} port${best.con > 1 ? 's' : ''} will connect`);
 }
 
+
+// ---------------------------------------------------------------------------
+// Selection, clipboard, group transforms
+// ---------------------------------------------------------------------------
+let selDrag = null;
+function selCellOf(h) { return h.kind === 'block' ? h.inside : [h.inside[0], state.layerY, h.inside[2]]; }
+function selBoxCells(a, b) { return [[0, 1, 2].map(i => Math.min(a[i], b[i])), [0, 1, 2].map(i => Math.max(a[i], b[i]))]; }
+function selectable(b) { const def = getDef(state.design, b.id); if (!def) return false; const o = objByUid.get(b.uid); return !isLocked(def) && (!o || o.visible); }
+function setSelection(uids, add = false) {
+  state.groupPivot = null;
+  if (!add) state.selection = new Set();
+  for (const u of uids) state.selection.add(u);
+  applyConveyorView(); renderSelectionPanel();
+}
+function clickSelect(uid, toggle) {
+  const b = state.design.blocks.find(x => x.uid === uid);
+  if (!b || !selectable(b)) { if (b) toast('That layer is locked'); return; }
+  if (toggle) { if (state.selection.has(uid)) state.selection.delete(uid); else state.selection.add(uid); applyConveyorView(); renderSelectionPanel(); }
+  else setSelection([uid]);
+}
+function areaSelect(a, b, add) {
+  const [mn, mx] = selBoxCells(a, b);
+  const lo = state.selAllHeights ? -Infinity : mn[1], hi = state.selAllHeights ? Infinity : mx[1];
+  const out = [];
+  for (const bl of state.design.blocks) {
+    if (!selectable(bl)) continue;
+    const def = getDef(state.design, bl.id); const ws = rotatedSize(bl.r, def.size);
+    if (bl.p[0] <= mx[0] && bl.p[0] + ws[0] - 1 >= mn[0] && bl.p[2] <= mx[2] && bl.p[2] + ws[2] - 1 >= mn[2] && bl.p[1] <= hi && bl.p[1] + ws[1] - 1 >= lo) out.push(bl.uid);
+  }
+  setSelection(out, add);
+  if (out.length) toast(`${state.selection.size} block${state.selection.size > 1 ? 's' : ''} selected`);
+}
+function selectAll() { setSelection(state.design.blocks.filter(selectable).map(b => b.uid)); }
+function selectSameType() {
+  const ids = new Set(selectedBlocks().map(b => b.id));
+  if (!ids.size) { toast('Select a block first'); return; }
+  setSelection(state.design.blocks.filter(b => ids.has(b.id) && selectable(b)).map(b => b.uid));
+}
+function selectLayer(cat) { setTool('select'); setSelection(state.design.blocks.filter(b => layerOf(getDef(state.design, b.id)) === cat && selectable(b)).map(b => b.uid)); }
+function selectedBlocks() { return state.design.blocks.filter(b => state.selection.has(b.uid)); }
+function boundsOf(list) {
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const b of list) { const def = getDef(state.design, b.id); const ws = rotatedSize(b.r, def.size);
+    for (let i = 0; i < 3; i++) { mn[i] = Math.min(mn[i], b.p[i]); mx[i] = Math.max(mx[i], b.p[i] + ws[i]); } }
+  return { mn, mx };
+}
+/** Rotate a list of blocks by 90° about a world axis through `pivot` (cell units). */
+function latticePivot(pivot, ax) {
+  // keep the lattice: the two in-plane pivot coordinates need the same fractional part
+  const plane = { x: [1, 2], y: [0, 2], z: [0, 1] }[ax];
+  const pv = [...pivot];
+  const frac = v => ((v % 1) + 1) % 1;
+  if (Math.abs(frac(pv[plane[0]]) - frac(pv[plane[1]])) > 1e-9) pv[plane[1]] -= 0.5;
+  return pv;
+}
+function rotateList(list, ax, dir, pivot) {
+  const g = rotateAbout(0, ax, dir);
+  const pv = latticePivot(pivot, ax);
+  return list.map(b => {
+    const def = getDef(state.design, b.id);
+    const ws = rotatedSize(b.r, def.size);
+    const c = [0, 1, 2].map(i => b.p[i] + ws[i] / 2 - pv[i]);
+    const c2 = applyRot(g, c);
+    const r2 = rotateAbout(b.r, ax, dir);
+    const ws2 = rotatedSize(r2, def.size);
+    return { ...b, p: [0, 1, 2].map(i => Math.round(pv[i] + c2[i] - ws2[i] / 2)), r: r2 };
+  });
+}
+function mirrorList(list, axis, twiceM) {
+  const i = { x: 0, y: 1, z: 2 }[axis];
+  return list.map(b => {
+    const def = getDef(state.design, b.id); const ws = rotatedSize(b.r, def.size);
+    const p = [...b.p]; p[i] = twiceM - b.p[i] - ws[i];
+    return { ...b, p, r: mirrorRot(b.r, axis) };
+  });
+}
+/** Replace the selected blocks with `next` (transformed copies) if they fit; keeps them selected. */
+function replaceSelection(next, keepOriginals = false, label = 'Done') {
+  const selSet = state.selection;
+  const others = new Map();
+  for (const b of state.design.blocks) {
+    if (!keepOriginals && selSet.has(b.uid)) continue;
+    const def = getDef(state.design, b.id); if (!def) continue;
+    for (const c of blockCells(b, def)) others.set(ck(...c), b.uid);
+  }
+  const mine = new Set();
+  for (const b of next) {
+    const def = getDef(state.design, b.id);
+    for (const c of blockCells(b, def)) { const k = ck(...c); if (others.has(k) || mine.has(k)) { toast("Can't do that: blocks would overlap"); return false; } mine.add(k); }
+  }
+  const newUids = [];
+  commit(() => {
+    if (!keepOriginals) state.design.blocks = state.design.blocks.filter(b => !selSet.has(b.uid));
+    for (const b of next) { const nb = { id: b.id, p: b.p, r: b.r, uid: uidSeq++ }; if (b.color != null) nb.color = b.color; state.design.blocks.push(nb); newUids.push(nb.uid); }
+  });
+  setSelection(newUids);
+  if (label) toast(label);
+  return true;
+}
+function rotateGroup(ax, dir) {
+  if (state.tool === 'paste' && state.clipboard) {
+    const cb = state.clipboard;
+    const piv = cb.size.map(v => v / 2);
+    let list = rotateList(cb.blocks, ax, dir, piv);
+    const { mn, mx } = boundsOf(list);
+    list = list.map(b => ({ ...b, p: b.p.map((v, i) => v - mn[i]) }));
+    state.clipboard = { blocks: list, size: mx.map((v, i) => v - mn[i]) };
+    showGhost(hover); return;
+  }
+  const list = selectedBlocks(); if (!list.length) return;
+  const { mn, mx } = boundsOf(list);
+  // reuse the pivot of the previous turn so that turning back restores the exact position
+  const pv = latticePivot(state.groupPivot || mn.map((v, i) => (v + mx[i]) / 2), ax);
+  if (replaceSelection(rotateList(list, ax, dir, pv), false, null)) state.groupPivot = pv;
+}
+function mirrorSel(axis, copy) {
+  const list = selectedBlocks(); if (!list.length) { toast('Select some blocks first'); return; }
+  const i = { x: 0, y: 1, z: 2 }[axis];
+  if (copy) {
+    const twice = Math.round(state.mirrorPos[axis] * 2);
+    replaceSelection(mirrorList(list, axis, twice), true, `Mirrored copy across the ${axis.toUpperCase()} symmetry plane (${state.mirrorPos[axis]})`);
+  } else {
+    const { mn, mx } = boundsOf(list);
+    replaceSelection(mirrorList(list, axis, mn[i] + mx[i]), false, `Flipped along ${axis.toUpperCase()}`);
+  }
+}
+function nudgeSel(d) {
+  const list = selectedBlocks(); if (!list.length) return;
+  replaceSelection(list.map(b => ({ ...b, p: b.p.map((v, i) => v + d[i]) })), false, null);
+}
+function deleteSel() {
+  const n = state.selection.size; if (!n) return;
+  const set = state.selection;
+  commit(() => { state.design.blocks = state.design.blocks.filter(b => !set.has(b.uid)); });
+  setSelection([]); toast(`Deleted ${n} block${n > 1 ? 's' : ''}`);
+}
+function copySel(quiet) {
+  const list = selectedBlocks(); if (!list.length) return;
+  const { mn, mx } = boundsOf(list);
+  state.clipboard = { blocks: list.map(b => ({ id: b.id, p: b.p.map((v, i) => v - mn[i]), r: b.r, ...(b.color != null ? { color: b.color } : {}) })), size: mx.map((v, i) => v - mn[i]) };
+  if (!quiet) toast(`Copied ${list.length} block${list.length > 1 ? 's' : ''}`);
+  renderSelectionPanel();
+}
+function cutSel() { copySel(true); const n = state.selection.size; deleteSel(); toast(`Cut ${n} blocks: Ctrl+V to paste`); }
+function moveSel() {
+  if (!state.selection.size) return;
+  copySel(true); deleteSel(); pasteStart(true);
+}
+function pasteStart(isMove) {
+  if (!state.clipboard) { toast('Nothing copied yet'); return; }
+  state.pasteIsMove = isMove;
+  setTool('paste');
+  toast(isMove ? 'Click where the blocks should go (W/A/S/D/Q/E rotate, Esc cancels)' : 'Click to paste (W/A/S/D/Q/E rotate, Esc stops pasting)');
+}
+function cancelPaste() {
+  if (state.pasteIsMove) { state.pasteIsMove = false; undo(); toast('Move cancelled'); }
+  setTool('select');
+}
+function pastePlacement(h) {
+  const cb = state.clipboard; if (!cb) return null;
+  const off = placeBox(h, cb.size);
+  const list = cb.blocks.map(b => ({ ...b, p: b.p.map((v, i) => v + off[i]) }));
+  const tmp = new Set(); let ok = true;
+  for (const b of list) { const def = getDef(state.design, b.id); if (!def) { ok = false; continue; }
+    for (const c of blockCells(b, def)) { const k = ck(...c); if (occ.has(k) || tmp.has(k)) ok = false; tmp.add(k); } }
+  return { list, ok, off };
+}
+function showPasteGhost(h) {
+  const pp = pastePlacement(h); if (!pp) return;
+  const c = cellSize();
+  if (pp.list.length <= 500) {
+    for (const b of pp.list) {
+      const def = getDef(state.design, b.id); if (!def) continue;
+      const g = buildBlockObject(def, b, c, { ghost: true, ghostOk: pp.ok });
+      g.traverse(o => { o.raycast = () => {}; }); ghostGroup.add(g);
+    }
+  }
+  const cb = state.clipboard;
+  const box = new THREE.Box3(new THREE.Vector3(...pp.off.map(v => v * c)), new THREE.Vector3(...pp.off.map((v, i) => (v + cb.size[i]) * c)));
+  ghostGroup.add(new THREE.Box3Helper(box, pp.ok ? 0xffb44d : 0xff4444));
+  $('#stCell').textContent = `Paste ${cb.blocks.length} blocks at ${pp.off.join(', ')}` + (pp.ok ? '' : ' (overlaps!)');
+}
+function pasteAt(h) {
+  const pp = pastePlacement(h); if (!pp) return;
+  if (!pp.ok) { toast("Can't paste here: blocks would overlap"); return; }
+  const newUids = [];
+  commit(() => { for (const b of pp.list) { const nb = { id: b.id, p: b.p, r: b.r, uid: uidSeq++ }; if (b.color != null) nb.color = b.color; state.design.blocks.push(nb); newUids.push(nb.uid); } });
+  if (state.pasteIsMove) { state.pasteIsMove = false; state.tool = 'select'; $$('#toolSeg button').forEach(b => b.classList.toggle('on', b.dataset.tool === 'select')); }
+  setSelection(newUids);
+  showGhost(hover);
+}
+function paintSel(color) {
+  const set = state.selection; if (!set.size) return;
+  const uids = [];
+  commit(() => {
+    state.design.blocks = state.design.blocks.map(b => {
+      if (!set.has(b.uid)) return b;
+      const nb = { ...b, uid: uidSeq++ }; if (color == null) delete nb.color; else nb.color = color; uids.push(nb.uid); return nb;
+    });
+  });
+  setSelection(uids);
+}
+
+function renderSelectionPanel() {
+  const el = $('#selSection'); if (!el) return;
+  const n = state.selection.size;
+  const show = state.tool === 'select' || state.tool === 'paste' || n > 0;
+  el.style.display = show ? '' : 'none';
+  if (!show) return;
+  const list = selectedBlocks();
+  const mass = list.reduce((s, b) => s + (getDef(state.design, b.id)?.mass || 0), 0);
+  const { mn, mx } = list.length ? boundsOf(list) : { mn: [0, 0, 0], mx: [0, 0, 0] };
+  $('#selInfo').innerHTML = state.tool === 'paste'
+    ? `<b>Pasting ${state.clipboard ? state.clipboard.blocks.length : 0} blocks</b> · click to place · Esc to ${state.pasteIsMove ? 'cancel the move' : 'stop'}`
+    : n ? `<b>${n}</b> selected · ${fmt.kg(mass)} · ${mx.map((v, i) => v - mn[i]).join('×')} cells` : '<span class="muted">Click a block, or drag across an area. Shift adds to the selection.</span>';
+  $$('#selSection [data-needsel]').forEach(b => b.disabled = !n);
+  $('#selPaste').disabled = !state.clipboard;
+}
+
 function boxFillList(start, h) {
   const a = placementAt(start), b = placementAt(h);
   if (!a || !b) return [];
@@ -571,10 +838,12 @@ let downPos = null;
 canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   downPos = [e.clientX, e.clientY];
+  if (state.tool === 'select') { const h = pick(e); if (h) { selDrag = { start: selCellOf(h), moved: false }; canvas.setPointerCapture(e.pointerId); } return; }
   if (state.tool === 'place' && e.shiftKey) { const h = pick(e); if (h) { fillStart = h; canvas.setPointerCapture(e.pointerId); } }
 });
 canvas.addEventListener('pointermove', e => {
   hover = pick(e);
+  if (selDrag && downPos && Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5) selDrag.moved = true;
   showGhost(hover);
   updateHoverInfo(hover);
 });
@@ -584,6 +853,14 @@ canvas.addEventListener('pointerup', e => {
   const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) > 5;
   downPos = null;
   const h = pick(e);
+  if (state.tool === 'select' && selDrag) {
+    const sd = selDrag; selDrag = null;
+    if (sd.moved && h) areaSelect(sd.start, selCellOf(h), e.shiftKey);
+    else if (h && h.kind === 'block') clickSelect(h.uid, e.shiftKey || e.ctrlKey);
+    else if (!e.shiftKey) setSelection([]);
+    showGhost(pick(e)); return;
+  }
+  if (state.tool === 'paste') { if (!moved && h) pasteAt(h); return; }
   if (fillStart) { const list = h ? boxFillList(fillStart, h) : []; fillStart = null; if (list.length) placeBlocks(list); showGhost(pick(e)); return; }
   if (moved || !h) return;
   if (state.tool === 'place') { const pl = placementAt(h); if (pl) placeBlocks([pl]); }
@@ -628,7 +905,23 @@ window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); saveToBrowser(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'c') { if (state.selection.size) { e.preventDefault(); copySel(); } return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'x') { if (state.selection.size) { e.preventDefault(); cutSel(); } return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); pasteStart(false); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); setTool('select'); selectAll(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); if (state.selection.size) { copySel(true); pasteStart(false); } return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const groupMode = state.tool === 'paste' || (state.tool === 'select' && state.selection.size);
+  if (groupMode && ['w', 's', 'a', 'd', 'q', 'e'].includes(k)) {
+    const m = { w: ['x', 1], s: ['x', -1], a: ['y', 1], d: ['y', -1], q: ['z', 1], e: ['z', -1] }[k];
+    rotateGroup(m[0], m[1]); return;
+  }
+  if (state.tool === 'select' && state.selection.size) {
+    const nud = { arrowleft: [-1, 0, 0], arrowright: [1, 0, 0], arrowup: [0, 0, -1], arrowdown: [0, 0, 1], pageup: [0, 1, 0], pagedown: [0, -1, 0] }[k];
+    if (nud) { e.preventDefault(); nudgeSel(nud); return; }
+    if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSel(); return; }
+    if (k === 'm') { moveSel(); return; }
+  }
   const dir = e.shiftKey ? -1 : 1;
   // WASD tilts the block's front up/down/left/right, Q/E roll it left/right
   if (k === 'w') rotateSel('x', 1);
@@ -643,10 +936,15 @@ window.addEventListener('keydown', e => {
   else if (k === 'c') setConveyorView(!state.convView);
   else if (k === 't') autoRotate();
   else if (k === 'x') { state.rot = 0; updateRotLabel(); showGhost(hover); }
-  else if (['1', '2', '3', '4'].includes(k)) setTool(['place', 'erase', 'pick', 'paint'][+k - 1]);
+  else if (['1', '2', '3', '4', '5'].includes(k)) setTool(['place', 'erase', 'pick', 'paint', 'select'][+k - 1]);
   else if (k === 'pageup' || k === ']') setLayer(state.layerY + 1);
   else if (k === 'pagedown' || k === '[') setLayer(state.layerY - 1);
-  else if (k === 'escape') { fillStart = null; showGhost(hover); }
+  else if (k === 'escape') {
+    fillStart = null;
+    if (state.tool === 'paste') cancelPaste();
+    else if (state.selection.size) setSelection([]);
+    showGhost(hover);
+  }
 });
 function rotateSel(ax, dir) { state.rot = rotateAbout(state.rot, ax, dir); updateRotLabel(); showGhost(hover); }
 function updateRotLabel() {
@@ -706,7 +1004,9 @@ function selectBlockType(id) {
   $('#stSel').textContent = def ? `Selected: ${def.name}` : '';
 }
 function setTool(t) {
+  if (state.tool === 'paste' && t !== 'paste' && state.pasteIsMove) { state.pasteIsMove = false; }
   state.tool = t;
+  renderSelectionPanel();
   $$('#toolSeg button').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   showGhost(hover);
 }
@@ -870,6 +1170,10 @@ function renderAnalysis() {
     $$('[data-sdir]').forEach(b => b.onclick = () => { env.suggestDir = b.dataset.sdir; autosave(); renderAnalysis(); });
   }
 
+  // Flight -------------------------------------------------------------------
+  try { renderFlight(a, flightAnalysis(d, env, a), env, station); } catch (err) { console.error(err); }
+  renderLayers();
+
   // Conveyors ----------------------------------------------------------------
   lastConv = analyseConveyors(d);
   if (state.convView) { applyConveyorView(); rebuildOverlays(); }
@@ -929,6 +1233,343 @@ function renderConveyorSection(cv) {
   $$('[data-net]', el).forEach(b => b.onclick = () => focusBlocks(cv.networks[+b.dataset.net].uids));
 }
 
+
+// ---------------------------------------------------------------------------
+// Layers (one per block category)
+// ---------------------------------------------------------------------------
+function renderLayers() {
+  const el = $('#layersList'); if (!el) return;
+  const counts = {};
+  for (const b of state.design.blocks) { const d = getDef(state.design, b.id); if (d) counts[layerOf(d)] = (counts[layerOf(d)] || 0) + 1; }
+  const cats = CATEGORIES.filter(c => counts[c.id]);
+  if (!cats.length) { el.innerHTML = '<div class="muted small">Layers appear as you place blocks.</div>'; return; }
+  el.innerHTML = cats.map(c => {
+    const L = state.layers[c.id] || {};
+    return `<div class="layer ${L.hidden ? 'hid' : ''}">
+      <button class="mini eye ${L.hidden ? '' : 'on'}" data-leye="${c.id}" title="Show / hide">${L.hidden ? '◌' : '●'}</button>
+      <button class="mini lock ${L.locked ? 'on' : ''}" data-llock="${c.id}" title="Lock (can't be erased, painted or selected)">${L.locked ? '🔒' : '🔓'}</button>
+      <i style="background:#${(CAT_COLORS[c.id] ?? 0x888888).toString(16).padStart(6, '0')}"></i>
+      <span class="ln">${c.name}</span><span class="muted small">${counts[c.id]}</span>
+      <button class="mini" data-lsolo="${c.id}" title="Show only this layer">Solo</button>
+      <button class="mini" data-lsel="${c.id}" title="Select every block in this layer">Select</button></div>`;
+  }).join('') + `<div class="row"><button class="mini" id="layersAll">Show all</button><button class="mini" id="layersUnlock">Unlock all</button></div>`;
+  const L = id => (state.layers[id] = state.layers[id] || {});
+  $$('[data-leye]', el).forEach(b => b.onclick = () => { const l = L(b.dataset.leye); l.hidden = !l.hidden; layersChanged(); });
+  $$('[data-llock]', el).forEach(b => b.onclick = () => { const l = L(b.dataset.llock); l.locked = !l.locked; layersChanged(); });
+  $$('[data-lsolo]', el).forEach(b => b.onclick = () => { for (const c of cats) L(c.id).hidden = c.id !== b.dataset.lsolo; layersChanged(); });
+  $$('[data-lsel]', el).forEach(b => b.onclick = () => selectLayer(b.dataset.lsel));
+  $('#layersAll').onclick = () => { for (const c of cats) L(c.id).hidden = false; layersChanged(); };
+  $('#layersUnlock').onclick = () => { for (const c of cats) L(c.id).locked = false; layersChanged(); };
+}
+function layersChanged() {
+  // hidden/locked blocks drop out of the selection
+  for (const b of state.design.blocks) if (state.selection.has(b.uid)) { const d = getDef(state.design, b.id); if (isHidden(d) || isLocked(d)) state.selection.delete(b.uid); }
+  applyCut(); applyConveyorView(); rebuildOverlays(); renderLayers(); renderSelectionPanel();
+}
+
+// ---------------------------------------------------------------------------
+// Design-wide repaint
+// ---------------------------------------------------------------------------
+function openRepaint() {
+  const used = new Map();
+  for (const b of state.design.blocks) { const d = getDef(state.design, b.id); if (!d) continue; const c = blockColor(d, b); used.set(c, (used.get(c) || 0) + 1); }
+  const types = [...new Set(state.design.blocks.map(b => b.id))].map(id => getDef(state.design, id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  const cats = CATEGORIES.filter(c => state.design.blocks.some(b => layerOf(getDef(state.design, b.id)) === c.id));
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box"><button class="close" data-close>×</button><h2>Repaint</h2>
+    <div class="formgrid">
+      <label>Which blocks</label><select id="rpScope">
+        <option value="all">Every block (${state.design.blocks.length})</option>
+        ${state.selection.size ? `<option value="sel" selected>Selection (${state.selection.size})</option>` : ''}
+        <optgroup label="Layer">${cats.map(c => `<option value="cat:${c.id}">${c.name}</option>`).join('')}</optgroup>
+        <optgroup label="Block type">${types.map(d => `<option value="id:${d.id}">${escapeHtml(d.name)}</option>`).join('')}</optgroup>
+        <optgroup label="Blocks currently this colour">${[...used.entries()].map(([c, n]) => `<option value="col:${c}">■ #${c.toString(16).padStart(6, '0')} (${n})</option>`).join('')}</optgroup>
+      </select>
+      <label>New colour</label><div class="inline"><input type="color" id="rpColor" value="#${(state.color ?? 0x3d6e9e).toString(16).padStart(6, '0')}">
+        <label class="chk"><input type="checkbox" id="rpDefault"> reset to default colours</label></div>
+    </div>
+    <div class="swatches">${['#b1bac4','#6e7681','#30363d','#f0f6fc','#9a4f14','#d4a72c','#3fb950','#1f6feb','#8957e5','#da3633','#2b3d52','#5a6b3c'].map(c => `<button class="swatch" data-sw="${c}" style="background:${c}"></button>`).join('')}</div>
+    <div class="row" style="justify-content:flex-end"><button data-close>Cancel</button><button class="primary" id="rpApply">Repaint</button></div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close != null) m.remove(); });
+  $$('[data-sw]', m).forEach(b => b.onclick = () => { $('#rpColor', m).value = b.dataset.sw; $('#rpDefault', m).checked = false; });
+  $('#rpApply', m).onclick = () => {
+    const sc = $('#rpScope', m).value;
+    const color = $('#rpDefault', m).checked ? null : parseInt($('#rpColor', m).value.slice(1), 16);
+    const match = b => {
+      const d = getDef(state.design, b.id); if (!d) return false;
+      if (sc === 'all') return true;
+      if (sc === 'sel') return state.selection.has(b.uid);
+      if (sc.startsWith('cat:')) return layerOf(d) === sc.slice(4);
+      if (sc.startsWith('id:')) return b.id === sc.slice(3);
+      if (sc.startsWith('col:')) return blockColor(d, b) === +sc.slice(4);
+      return false;
+    };
+    let n = 0;
+    commit(() => {
+      state.design.blocks = state.design.blocks.map(b => {
+        if (!match(b) || isLocked(getDef(state.design, b.id))) return b;
+        n++; const nb = { ...b, uid: uidSeq++ }; if (color == null) delete nb.color; else nb.color = color; return nb;
+      });
+    });
+    state.selection.clear(); renderSelectionPanel();
+    m.remove(); toast(`Repainted ${n} block${n === 1 ? '' : 's'}`);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Flight analysis panels
+// ---------------------------------------------------------------------------
+const mps = v => v == null || !isFinite(v) ? '—' : v.toFixed(1);
+const dist = v => v == null || !isFinite(v) ? '—' : v >= 1000 ? (v / 1000).toFixed(2) + ' km' : v.toFixed(0) + ' m';
+function renderFlight(a, f, env, station) {
+  if (station) { ['#speedSection', '#enduranceSection', '#handlingSection'].forEach(id => $(id).innerHTML = ''); return; }
+  const cap = env.speedCap || 100;
+  const sF = f.speedFull, sE = f.speedEmpty;
+  const rows = sF.rows.map((r, i) => {
+    const e = sE.rows[i];
+    return `<tr><td>${r.label}</td><td>${mps(r.a)}<div class="small muted">${mps(e.a)}</div></td>
+      <td>${r.tCap ? fmt.time(r.tCap) : '<span class="pill fail">never</span>'}<div class="small muted">${e.tCap ? fmt.time(e.tCap) : '—'}</div></td>
+      <td>${dist(r.dCap)}</td>
+      <td>${r.dBrake != null ? dist(r.dBrake) : '<span class="pill fail">can\'t</span>'}<div class="small muted">${dist(e.dBrake)}</div></td></tr>`;
+  }).join('');
+  const land = sF.landing;
+  $('#speedSection').innerHTML = `<h3>Speed &amp; stopping <span class="muted small">(full / <span class="small">empty</span>, ${cap} m/s cap)</span></h3>
+    <table class="t"><thead><tr><th>Motion</th><th>Accel m/s²</th><th>0 → ${cap} m/s</th><th>Distance</th><th>Stop from ${cap}</th></tr></thead><tbody>${rows}</tbody></table>
+    ${env.g > 0 ? (land ? `<div class="note">Landing with full cargo: to stop in time, descend no faster than ${land.map(x => `<b>${x.v.toFixed(0)} m/s</b> from ${x.h} m`).join(', ')}.
+      Braking uses Up thrust minus gravity (${mps(sF.brakeDecel)} m/s²).</div>`
+      : `<div class="note warn">With full cargo the Up thrusters can't beat gravity, so the ship can't stop a descent. Land empty, or add lift.</div>`) : ''}
+    <div class="small muted" style="margin-top:4px">Stopping a motion uses the thrusters on the opposite side, at full power as inertial dampeners do.</div>`;
+
+  // Endurance --------------------------------------------------------------
+  const eF = f.enduranceFull, eE = f.enduranceEmpty;
+  const hrs = h => h == null ? '—' : h === Infinity ? 'unlimited*' : fmt.time(h * 3600);
+  const asc = f.ascentFull, ascE = f.ascentEmpty;
+  const ascLine = (x, lbl) => {
+    if (!x.applicable) return '';
+    if (x.reached) {
+      const parts = [];
+      if (x.h2Used > 0) parts.push(`${fmt.L(x.h2Used)} H₂ (${x.h2Cap ? Math.round(x.h2Used / x.h2Cap * 100) : '∞'}% of tanks)`);
+      if (x.mwhUsed > 0) parts.push(`${fmt.num(x.mwhUsed, 2)} MWh battery (${x.mwhCap ? Math.round(x.mwhUsed / x.mwhCap * 100) : '∞'}%)`);
+      const out = x.h2Out != null || x.batOut != null;
+      return `<div class="check"><span class="pill ${out ? 'marginal' : 'ok'}">${out ? '!' : '✓'}</span> <b>${lbl}:</b> reaches space (${fmt.num(x.edge / 1000, 1)} km) in ${fmt.time(x.time)}${parts.length ? ', using ' + parts.join(' and ') : ''}.
+        ${x.h2Out != null ? `<br><span class="small">Hydrogen runs out at ${fmt.num(x.h2Out / 1000, 1)} km; it only makes it on the other thrusters.</span>` : ''}${x.batOut != null ? `<br><span class="small">Batteries run flat at ${fmt.num(x.batOut / 1000, 1)} km.</span>` : ''}</div>`;
+    }
+    const why = x.atmoLossAt != null ? ' (atmospheric thrusters fade as the air thins)' : '';
+    return `<div class="check"><span class="pill fail">✗</span> <b>${lbl}:</b> stalls at ${fmt.num((x.stallAt ?? x.altitude) / 1000, 1)} km${why}. Space starts at ${fmt.num(x.edge / 1000, 1)} km.
+      ${x.h2Out != null ? `<br><span class="small">Hydrogen ran out at ${fmt.num(x.h2Out / 1000, 1)} km.</span>` : ''}${x.batOut != null ? `<br><span class="small">Batteries ran flat at ${fmt.num(x.batOut / 1000, 1)} km.</span>` : ''}</div>`;
+  };
+  $('#enduranceSection').innerHTML = `<h3>Endurance &amp; reaching space</h3>
+    <div class="kv">
+      <span class="k">Battery storage</span><span class="v">${fmt.num(eF.batteryMWh)} MWh</span>
+      ${eF.genOut ? `<span class="k">Reactors / H₂ engines output</span><span class="v">${fmt.num(eF.genOut)} MW</span>` : ''}
+      ${eF.solarOut ? `<span class="k">Solar (full sun)</span><span class="v">${fmt.num(eF.solarOut, 3)} MW</span>` : ''}
+      ${env.g > 0 && eF.hoverMW != null ? `<span class="k">Hover power draw (full / empty)</span><span class="v">${fmt.num(eF.hoverMW)} / ${fmt.num(eE.hoverMW ?? 0)} MW</span>` : ''}
+      ${env.g > 0 && eF.hoverMW ? `<span class="k">Hover time on batteries (full / empty)</span><span class="v">${hrs(eF.hoverBatteryH)} / ${hrs(eE.hoverBatteryH)}</span>` : ''}
+      ${env.g > 0 && eF.hoverH2S != null ? `<span class="k">Hover time on hydrogen (full / empty)</span><span class="v">${fmt.time(eF.hoverH2S)} / ${fmt.time(eE.hoverH2S)}</span>` : ''}
+      ${eF.cruiseMW ? `<span class="k">Full forward thrust on batteries</span><span class="v">${hrs(eF.cruiseBatteryH)}</span>` : ''}
+      ${eF.cruiseH2S != null ? `<span class="k">Full forward thrust on hydrogen</span><span class="v">${fmt.time(eF.cruiseH2S)}</span>` : ''}
+    </div>
+    ${asc.applicable ? `<div style="margin-top:6px">${ascLine(asc, 'Full cargo')}${ascLine(ascE, 'Empty')}</div>
+      <div class="small muted">Simulated straight-up climb from the surface of ${escapeHtml(asc.planet.name)}: gravity falls off above the hills, air thins to nothing at ${fmt.num(asc.planet.atmoAlt, 1)} km.</div>` : '<div class="small muted">No gravity here, so there is nothing to climb out of.</div>'}
+    ${eF.hoverBatteryH === Infinity ? '<div class="small muted">* Reactors or hydrogen engines cover the draw for as long as they have fuel.</div>' : ''}`;
+
+  // Handling: jump, gyros, landing ---------------------------------------------
+  let h = '<h3>Handling, landing &amp; jumping</h3>';
+  const g = f.gyroFull, gE = f.gyroEmpty;
+  if (g) {
+    h += `<div class="small muted">Gyroscopes: ${g.count} · turn acceleration from gyro torque ÷ the ship's rotational inertia (estimate).</div>
+    <table class="t"><thead><tr><th>Axis</th><th>Full °/s²</th><th>Empty °/s²</th><th>90° turn (full)</th><th></th></tr></thead><tbody>
+    ${g.axes.map((x, i) => `<tr><td>${x.name}</td><td>${fmt.num(x.alpha, 1)}</td><td>${fmt.num(gE.axes[i].alpha, 1)}</td><td>${x.t90 ? x.t90.toFixed(1) + ' s' : '—'}</td>
+      <td><span class="pill ${x.status}">${x.status === 'ok' ? (x.alpha >= 30 ? 'Agile' : 'OK') : x.status === 'marginal' ? 'Sluggish' : g.count ? 'Very slow' : 'No gyros'}</span></td></tr>`).join('')}</tbody></table>`;
+    const worst = Math.min(...g.axes.map(x => x.alpha));
+    if (g.count && worst < 8) {
+      const need = Math.ceil(g.count * 8 / Math.max(worst, 0.01)) - g.count;
+      h += `<div class="note warn">Turning is sluggish with full cargo. About ${need} more gyroscope${need > 1 ? 's' : ''} would bring the slowest axis to ~8 °/s².</div>`;
+    } else if (!g.count) h += `<div class="note warn">No gyroscopes: the ship can't turn (or stay level in gravity).</div>`;
+  }
+  const L = f.landing;
+  if (L) {
+    h += `<div class="check" style="margin-top:6px"><span class="pill ${L.stable ? 'ok' : 'fail'}">${L.stable ? '✓' : '✗'}</span> ${L.stable
+      ? `Centre of mass is <b>${fmt.num(L.margin, 1)} m inside</b> the footprint of the ${L.source}; it rests level and would tip on slopes steeper than ~${L.tipDeg.toFixed(0)}°.`
+      : `Centre of mass is <b>${fmt.num(-L.margin, 1)} m outside</b> the footprint of the ${L.source}, so it will tip over when landed.`}
+      <br><span class="small muted">CoM is ${fmt.num(L.height, 1)} m above the bottom, offset ${fmt.num(L.offset[0], 1)} m sideways / ${fmt.num(-L.offset[1], 1)} m forward of the footprint centre.${L.source === 'lowest blocks' ? ' Add Landing Gear to check against your feet instead.' : ''}</span></div>`;
+    if (env.g > 0 && env.density > 0) h += L.chutes
+      ? `<div class="check"><span class="pill ${L.chuteOk ? 'ok' : 'marginal'}">${L.chuteOk ? '✓' : '!'}</span> ${L.chutes} parachute hatch${L.chutes > 1 ? 'es' : ''} handle ≈ ${fmt.kg(L.chuteKg)} (rule of thumb) vs ${fmt.kg(a.loadedMass)} full.</div>`
+      : `<div class="small muted">No parachutes. Rule of thumb: one large-grid hatch per ~100 t, one small-grid hatch per ~10 t.</div>`;
+  }
+  const J = f.jump;
+  if (J) h += `<div class="kv" style="margin-top:8px">
+      <span class="k">Jump drives</span><span class="v">${J.count}</span>
+      <span class="k">Jump range empty / full</span><span class="v"><b>${fmt.num(J.empty, 0)} km</b> / <b>${fmt.num(J.full, 0)} km</b></span>
+      <span class="k">Max range (light ship)</span><span class="v">${fmt.num(J.maxKm, 0)} km up to ${fmt.kg(J.threshold)}</span>
+      <span class="k">Energy to charge all</span><span class="v">${fmt.num(J.chargeMWh)} MWh</span></div>
+      ${a.loadedMass > J.threshold ? `<div class="small muted">Heavier than ${fmt.kg(J.threshold)}, so range falls in proportion to mass.</div>` : ''}`;
+  else if (state.design.grid === 'L' || true) h += `<div class="small muted" style="margin-top:6px">No jump drive. Large grid: up to 2,000 km per drive below 1,250 t; Prototech drives go further.</div>`;
+  $('#handlingSection').innerHTML = h;
+}
+
+// ---------------------------------------------------------------------------
+// Sharing: link, comparison, build sheet
+// ---------------------------------------------------------------------------
+function textPrompt(msg, value = '') {
+  return new Promise(res => {
+    const m = document.createElement('div'); m.className = 'modal';
+    m.innerHTML = `<div class="box" style="width:min(440px,92vw)"><p>${escapeHtml(msg)}</p><input id="tpv" style="width:100%" value="${escapeHtml(value)}">
+      <div class="row" style="justify-content:flex-end"><button data-a="0">Cancel</button><button class="primary" data-a="1">OK</button></div></div>`;
+    document.body.appendChild(m);
+    const inp = $('#tpv', m); inp.focus(); inp.select();
+    const done = ok => { m.remove(); res(ok ? inp.value.trim() : null); };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
+    m.addEventListener('click', e => { const a = e.target.dataset.a; if (e.target === m || a != null) done(a === '1'); });
+  });
+}
+async function saveVariant() {
+  const name = await textPrompt('Save the current design as a variant called:', state.design.name + ' (variant)');
+  if (!name) return;
+  state.design.name = name; $('#designName').value = name;
+  saveToBrowser();
+}
+
+async function openShare() {
+  const code = await encodeDesign(serialise());
+  const url = location.origin + location.pathname + '#design=' + code;
+  const m = document.createElement('div'); m.className = 'modal';
+  const local = location.protocol === 'file:' || /^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname);
+  m.innerHTML = `<div class="box"><button class="close" data-close>×</button><h2>Share by link</h2>
+    <p class="small muted">The whole design (blocks, colours, custom blocks and settings) is packed into this link; nothing is uploaded anywhere. Anyone opening it gets their own copy.</p>
+    <textarea id="shUrl" readonly style="width:100%;height:110px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;font:12px monospace">${escapeHtml(url)}</textarea>
+    <div class="small muted">${url.length.toLocaleString()} characters${url.length > 8000 ? ' · <span style="color:var(--warn)">long: some chat apps cut links this size. Use Export for big ships.</span>' : ''}</div>
+    ${local ? '<div class="note warn">This copy runs on your own computer, so the link only works here. Host the planner (e.g. GitHub Pages) to share it with others.</div>' : ''}
+    <div class="row" style="justify-content:flex-end"><button id="shCopy" class="primary">Copy link</button></div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close != null) m.remove(); });
+  $('#shCopy', m).onclick = async () => {
+    try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { $('#shUrl', m).select(); toast('Press Ctrl+C to copy'); }
+  };
+}
+async function loadFromHash() {
+  const hm = /^#design=(.+)$/.exec(location.hash);
+  if (!hm) return false;
+  try {
+    const d = await decodeDesign(hm[1]);
+    const cur = readJSON(LS_CURRENT, null);
+    if (cur && cur.blocks && cur.blocks.length) {
+      const all = readJSON(LS_DESIGNS, {});
+      all[`${cur.name} (before opening a shared link)`] = cur; writeJSON(LS_DESIGNS, all);
+    }
+    loadDesign(d);
+    history.replaceState(null, '', location.pathname + location.search);
+    toast(`Opened shared design “${d.name}”`);
+    return true;
+  } catch (e) { toast('That share link is damaged or incomplete'); return false; }
+}
+
+const COMPARE_METRICS = [
+  { k: 'Grid / blocks', f: x => `${x.d.grid === 'L' ? 'Large' : 'Small'} · ${x.a.blockCount}` },
+  { k: 'Size (W × H × L m)', f: x => x.a.bounds ? x.a.bounds.meters.map(v => v.toFixed(1)).join(' × ') : '—' },
+  { k: 'Empty mass', n: x => x.a.emptyMass, fmt: fmt.kg, better: 'low' },
+  { k: 'Cargo space', n: x => x.a.fillableBaseL * x.a.mult, fmt: fmt.L, better: 'high' },
+  { k: 'Full mass', n: x => x.a.loadedMass, fmt: fmt.kg, better: 'low' },
+  ...DIRS.map(d => ({ k: `TWR full: ${d.name}`, n: x => { const r = x.a.dirs.find(y => y.id === d.id); return isFinite(r.twrLoaded) ? r.twrLoaded : null; }, fmt: v => v.toFixed(2), better: 'high' })),
+  { k: 'Forward accel (full)', n: x => x.a.dirs.find(y => y.id === 'forward').accLoaded, fmt: v => v.toFixed(1) + ' m/s²', better: 'high' },
+  { k: 'Max cargo at target TWR', n: x => x.a.dirs[0].maxCargoShownKg, fmt: fmt.kg, better: 'high' },
+  { k: 'Power output', n: x => x.a.pOut, fmt: v => fmt.num(v) + ' MW', better: 'high' },
+  { k: 'Battery storage', n: x => x.a.store, fmt: v => fmt.num(v) + ' MWh', better: 'high' },
+  { k: 'Hydrogen capacity', n: x => x.a.h2Cap, fmt: fmt.L, better: 'high' },
+  { k: 'Reach space (full)', f: x => !x.f.ascentFull.applicable ? 'n/a' : x.f.ascentFull.reached ? 'Yes · ' + fmt.time(x.f.ascentFull.time) : 'No · ' + fmt.num((x.f.ascentFull.stallAt ?? 0) / 1000, 1) + ' km' },
+  { k: 'Jump range (full)', n: x => x.f.jump ? x.f.jump.full : null, fmt: v => fmt.num(v, 0) + ' km', better: 'high' },
+  { k: 'Slowest turn (full)', n: x => x.f.gyroFull ? Math.min(...x.f.gyroFull.axes.map(a => a.alpha)) : null, fmt: v => fmt.num(v, 1) + ' °/s²', better: 'high' },
+  { k: 'Landing stable', f: x => x.f.landing ? (x.f.landing.stable ? 'Yes' : 'No') : '—' },
+  { k: 'Conveyor issues', n: x => x.cv.issues.length, fmt: v => String(v), better: 'low' },
+];
+function compareSources() {
+  const saved = readJSON(LS_DESIGNS, {});
+  return [
+    { id: 'cur', label: `Current: ${state.design.name}`, get: () => serialise() },
+    ...Object.keys(saved).sort().map(n => ({ id: 'saved:' + n, label: n, get: () => saved[n] })),
+    ...EXAMPLES.map(e => ({ id: 'ex:' + e.id, label: 'Example: ' + e.name, get: () => buildExampleShip(e.id) })),
+  ];
+}
+function openCompare() {
+  const src = compareSources();
+  const opts = sel => src.map(x => `<option value="${escapeHtml(x.id)}" ${x.id === sel ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('');
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box wide"><button class="close" data-close>×</button><h2>Compare designs</h2>
+    <div class="formgrid"><label>Design A</label><select id="cmpA">${opts('cur')}</select>
+      <label>Design B</label><select id="cmpB">${opts(src[1] ? src[1].id : 'cur')}</select>
+      <label>Environment</label><select id="cmpEnv"><option value="cur">Current settings for both (fair comparison)</option><option value="own">Each design's own saved settings</option></select></div>
+    <div id="cmpOut" style="margin-top:10px"></div>
+    <div class="small muted">Tip: “Designs ▾ → Save as variant” keeps several versions of a ship to compare.</div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close != null) m.remove(); });
+  const run = () => {
+    const ctx = id => {
+      const d0 = src.find(x => x.id === id).get();
+      const d = { ...newDesign(d0.grid), ...d0, settings: { ...defaultSettings(), ...(d0.settings || {}) }, customBlocks: d0.customBlocks || {}, overrides: d0.overrides || {} };
+      d.blocks = (d0.blocks || []).map((b, i) => ({ ...b, uid: i + 1 }));
+      const env = $('#cmpEnv', m).value === 'cur' ? S() : d.settings;
+      const a = analyse(d, env);
+      return { d, a, f: flightAnalysis(d, env, a), cv: analyseConveyors(d) };
+    };
+    const A = ctx($('#cmpA', m).value), B = ctx($('#cmpB', m).value);
+    const rows = COMPARE_METRICS.map(mt => {
+      if (mt.f) return `<tr><td>${mt.k}</td><td>${mt.f(A)}</td><td>${mt.f(B)}</td><td></td></tr>`;
+      const va = mt.n(A), vb = mt.n(B);
+      const show = v => v == null ? '—' : mt.fmt(v);
+      let diff = '';
+      if (va != null && vb != null && isFinite(va) && isFinite(vb) && va !== vb) {
+        const better = mt.better === 'high' ? vb > va : vb < va;
+        const pct = va !== 0 ? ` (${vb > va ? '+' : ''}${((vb - va) / Math.abs(va) * 100).toFixed(0)}%)` : '';
+        diff = `<span style="color:${better ? 'var(--ok)' : 'var(--bad)'}">${better ? '▲' : '▼'} B${pct}</span>`;
+      }
+      return `<tr><td>${mt.k}</td><td>${show(va)}</td><td>${show(vb)}</td><td>${diff}</td></tr>`;
+    }).join('');
+    $('#cmpOut', m).innerHTML = `<table class="t cmp"><thead><tr><th>Metric</th><th>A: ${escapeHtml(A.d.name)}</th><th>B: ${escapeHtml(B.d.name)}</th><th>B vs A</th></tr></thead><tbody>${rows}</tbody></table>`;
+  };
+  ['#cmpA', '#cmpB', '#cmpEnv'].forEach(id => $(id, m).onchange = run);
+  run();
+}
+
+function snapshotViews() {
+  const keep = { pos: camera.position.clone(), tgt: controls.target.clone() };
+  const vis = { g: ghostGroup.visible, m: mirrorGroup.visible, a: axisGroup && axisGroup.visible, gr: gridHelper.visible };
+  ghostGroup.visible = false; mirrorGroup.visible = false; if (axisGroup) axisGroup.visible = false;
+  const out = [];
+  for (const [v, label] of [['iso', '3D view'], ['front', 'Front'], ['side', 'Side'], ['top', 'Top']]) {
+    setView(v); controls.update(); renderer.render(scene, camera);
+    out.push({ label, url: renderer.domElement.toDataURL('image/jpeg', 0.85) });
+  }
+  ghostGroup.visible = vis.g; mirrorGroup.visible = vis.m; if (axisGroup) axisGroup.visible = vis.a;
+  camera.position.copy(keep.pos); controls.target.copy(keep.tgt); controls.update();
+  return out;
+}
+function openSheet() {
+  if (!state.design.blocks.length) { toast('Nothing to print yet'); return; }
+  if (!$('#sheetCss')) { const st = document.createElement('style'); st.id = 'sheetCss'; st.textContent = SHEET_CSS; document.head.appendChild(st); }
+  const env = S();
+  const a = analyse(state.design, env), f = flightAnalysis(state.design, env, a), cv = analyseConveyors(state.design);
+  const html = buildSheetHtml({ design: state.design, a, f, cv, env, planetName: planetOf(env).name, snapshots: snapshotViews() });
+  let el = $('#sheet'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sheet';
+  el.innerHTML = `<div class="sbar"><b style="margin-right:auto">Build sheet: ${escapeHtml(state.design.name)}</b>
+    <button class="primary" id="shtPrint">Print / save as PDF</button><button id="shtDl">Download HTML</button><button id="shtClose">Close</button></div>${html}`;
+  document.body.appendChild(el);
+  $('#shtClose').onclick = () => el.remove();
+  $('#shtPrint').onclick = () => {
+    document.body.classList.add('printing');
+    const after = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', after); };
+    window.addEventListener('afterprint', after);
+    try { window.print(); } catch { toast('Printing is blocked here: use Download HTML and print that file'); }
+    setTimeout(after, 1500);
+  };
+  $('#shtDl').onclick = () => {
+    const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(state.design.name)}: build sheet</title><style>${SHEET_CSS.replace(/#sheet/g, 'body')}</style></head><body>${html}</body></html>`;
+    const aEl = document.createElement('a'); aEl.href = URL.createObjectURL(new Blob([doc], { type: 'text/html' }));
+    aEl.download = (state.design.name || 'ship').replace(/[^\w\- ]+/g, '_') + ' - build sheet.html'; aEl.click();
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Environment controls
 // ---------------------------------------------------------------------------
@@ -951,6 +1592,7 @@ function initEnvControls() {
   $('#extraMass').oninput = e => { S().extraMass = Math.max(0, +e.target.value || 0); envChanged(); };
   $('#targetTwr').oninput = e => { S().targetTwr = Math.max(0.1, +e.target.value || 1.5); envChanged(); };
   $('#fillMinor').onchange = e => { S().fillMinor = e.target.checked; envChanged(); };
+  $('#speedCap').oninput = e => { S().speedCap = Math.max(1, +e.target.value || 100); envChanged(); };
 }
 function markCustomPlanet() {
   const p = PLANETS.find(x => x.id === S().planetId);
@@ -963,7 +1605,7 @@ function envToUi() {
   $('#invMult').value = s.invMult; $('#cargoItem').value = s.itemId; $('#customLPerKg').value = s.customLPerKg;
   $$('.customDensity').forEach(e => e.style.display = s.itemId === 'custom' ? '' : 'none');
   $('#fillPct').value = s.fillPct; $('#fillVal').textContent = s.fillPct + '%';
-  $('#extraMass').value = s.extraMass; $('#targetTwr').value = s.targetTwr; $('#fillMinor').checked = s.fillMinor;
+  $('#extraMass').value = s.extraMass; $('#targetTwr').value = s.targetTwr; $('#fillMinor').checked = s.fillMinor; $('#speedCap').value = s.speedCap || 100;
   const p = PLANETS.find(x => x.id === s.planetId);
   $('#envNote').textContent = s.g > 0
     ? `Gravity ${(s.g * G0).toFixed(2)} m/s². Air density ${(+s.density).toFixed(2)}: set it lower to model higher altitude (atmosphere thins toward its edge).`
@@ -982,6 +1624,8 @@ function loadDesign(d, { keepUndo = false } = {}) {
   for (const [k, v] of Object.entries(lib)) if (!design.customBlocks[k]) design.customBlocks[k] = v;
   design.blocks = withUids((d.blocks || []).map(b => ({ id: b.id, p: b.p, r: b.r || 0, ...(b.color != null ? { color: b.color } : {}) })));
   state.design = design;
+  state.selection = new Set();
+  if (state.tool === 'paste') state.tool = 'place';
   if (!keepUndo) { state.undo = []; state.redo = []; }
   clearScene();
   setupGridHelpers();
@@ -1013,9 +1657,9 @@ function saveToBrowser() {
 function renderDesignsMenu() {
   const all = readJSON(LS_DESIGNS, {});
   const names = Object.keys(all).sort();
-  $('#designsMenu').innerHTML = names.length ? names.map(n => `<div class="item" data-load="${encodeURIComponent(n)}"><span>${escapeHtml(n)}</span>
+  $('#designsMenu').innerHTML = `<div class="item" id="dmVariant"><span><b>＋ Save current as variant…</b></span></div>` + (names.length ? names.map(n => `<div class="item" data-load="${encodeURIComponent(n)}"><span>${escapeHtml(n)}</span>
      <span class="muted small">${all[n].grid === 'S' ? 'SG' : 'LG'} · ${all[n].blocks.length}</span><button class="mini" data-del="${encodeURIComponent(n)}">✕</button></div>`).join('')
-    : '<div class="empty">No saved designs yet. Click Save.</div>';
+    : '<div class="empty">No saved designs yet. Click Save.</div>');
 }
 // In-page yes/no dialog (the browser's built-in pop-ups are blocked in some hosts)
 function ask(msg, okLabel = 'Continue') {
@@ -1177,7 +1821,8 @@ function init() {
   $$('[data-rot]').forEach(b => b.onclick = () => {
     if (b.dataset.rot === 'reset') { state.rot = 0; updateRotLabel(); return; }
     if (b.dataset.rot === 'auto') { autoRotate(); return; }
-    const [ax, d] = b.dataset.rot.split(','); rotateSel(ax, +d);
+    const [ax, d] = b.dataset.rot.split(',');
+    if (state.tool === 'paste' || (state.tool === 'select' && state.selection.size)) rotateGroup(ax, +d); else rotateSel(ax, +d);
   });
   $('#colorPick').oninput = e => { state.color = parseInt(e.target.value.slice(1), 16); $('#useColor').checked = true; };
   $('#useColor').onchange = e => { state.color = e.target.checked ? parseInt($('#colorPick').value.slice(1), 16) : null; };
@@ -1234,20 +1879,38 @@ function init() {
   document.addEventListener('click', () => dd.classList.remove('open'));
   $('#designsMenu').onclick = e => {
     e.stopPropagation();
+    if (e.target.closest('#dmVariant')) { dd.classList.remove('open'); saveVariant(); return; }
     const del = e.target.closest('[data-del]'), ld = e.target.closest('[data-load]');
     const all = readJSON(LS_DESIGNS, {});
     if (del) { const n = decodeURIComponent(del.dataset.del); ask(`Delete saved design “${n}”?`, 'Delete').then(ok => { if (ok) { delete all[n]; writeJSON(LS_DESIGNS, all); renderDesignsMenu(); } }); return; }
     if (ld) { const n = decodeURIComponent(ld.dataset.load); loadDesign(all[n]); dd.classList.remove('open'); }
   };
   $('#btnHelp').onclick = () => { $('#helpModal').hidden = false; };
+  const shDd = $('#btnShare').parentElement;
+  $('#btnShare').onclick = e => { e.stopPropagation(); shDd.classList.toggle('open'); };
+  document.addEventListener('click', () => shDd.classList.remove('open'));
+  $('#shareMenu').onclick = e => {
+    e.stopPropagation(); const it = e.target.closest('[data-sh]'); if (!it) return; shDd.classList.remove('open');
+    ({ link: openShare, compare: openCompare, sheet: openSheet, export: exportDesign, import: () => $('#fileInput').click() })[it.dataset.sh]();
+  };
+  $('#btnRepaint').onclick = openRepaint;
+  $('#selAllHeights').onchange = e => { state.selAllHeights = e.target.checked; };
+  const act = { copy: () => copySel(), cut: cutSel, paste: () => pasteStart(false), del: deleteSel, move: moveSel, dup: () => { copySel(true); pasteStart(false); },
+    all: selectAll, same: selectSameType, none: () => setSelection([]), paint: () => paintSel(state.color),
+    fx: () => mirrorSel('x', false), fy: () => mirrorSel('y', false), fz: () => mirrorSel('z', false),
+    mx: () => mirrorSel('x', true), my: () => mirrorSel('y', true), mz: () => mirrorSel('z', true) };
+  $$('[data-sel]').forEach(b => b.onclick = () => act[b.dataset.sel]());
   $$('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m || e.target.dataset.close != null) m.hidden = true; }));
 
   const cur = readJSON(LS_CURRENT, null);
   if (cur && Array.isArray(cur.blocks)) loadDesign(cur); else loadDesign(buildExampleShip('lg-h2-light'));
   resize(); loop();
+  loadFromHash();
+  window.addEventListener('hashchange', loadFromHash);
+  renderSelectionPanel();
 }
 
 // Expose a small API for debugging / tests
-window.SEBP = { state, rotFor, autoRotate: () => autoRotate(), setHover: h => { hover = h; showGhost(h); }, analyseConveyors: () => analyseConveyors(state.design), analyse: () => analyse(state.design, S()), loadDesign, buildExample, serialise, placeBlocks, placementAt };
+window.SEBP = { state, rotFor, setSelection, rotateGroup, mirrorSel, copySel, pasteStart, pasteAt, deleteSel, nudgeSel, openShare, openCompare, openSheet, encodeDesign, decodeDesign, flight: () => { const a = analyse(state.design, S()); return flightAnalysis(state.design, S(), a); }, autoRotate: () => autoRotate(), setHover: h => { hover = h; showGhost(h); }, analyseConveyors: () => analyseConveyors(state.design), analyse: () => analyse(state.design, S()), loadDesign, buildExample, serialise, placeBlocks, placementAt };
 
 init();

@@ -44,15 +44,17 @@ export function thrusterEffectiveness(type, airDensity) {
 // Planet presets. density = air density at the surface (1 = Earth sea level).
 // Air density falls roughly linearly to 0 at the top of the atmosphere, so use
 // the "air density" slider to model flight at altitude.
+// R = surface radius (km), gravAlt = altitude where gravity drops below 0.05 g (km),
+// atmoAlt = height of the atmosphere (km). Wiki values; Alien & Triton gravAlt/atmoAlt are estimates.
 export const PLANETS = [
-  { id: 'earth',  name: 'EarthLike',      g: 1.00, density: 1.0 },
-  { id: 'mars',   name: 'Mars',           g: 0.90, density: 1.0 },
-  { id: 'alien',  name: 'Alien',          g: 1.10, density: 1.0 },
-  { id: 'triton', name: 'Triton',         g: 1.00, density: 1.0 },
-  { id: 'pertam', name: 'Pertam',         g: 1.20, density: 0.8 },
-  { id: 'moon',   name: 'Moon',           g: 0.25, density: 0.0 },
-  { id: 'europa', name: 'Europa',         g: 0.25, density: 1.0 },
-  { id: 'titan',  name: 'Titan',          g: 0.25, density: 1.0 },
+  { id: 'earth',  name: 'EarthLike',      g: 1.00, density: 1.0, R: 60,  gravAlt: 42.86, atmoAlt: 14.4 },
+  { id: 'mars',   name: 'Mars',           g: 0.90, density: 1.0, R: 60,  gravAlt: 39.31, atmoAlt: 14.4 },
+  { id: 'alien',  name: 'Alien',          g: 1.10, density: 1.0, R: 60,  gravAlt: 44.3,  atmoAlt: 14.4 },
+  { id: 'triton', name: 'Triton',         g: 1.00, density: 1.0, R: 40,  gravAlt: 28.7,  atmoAlt: 9.6 },
+  { id: 'pertam', name: 'Pertam',         g: 1.20, density: 0.8, R: 30,  gravAlt: 18.51, atmoAlt: 4.7 },
+  { id: 'moon',   name: 'Moon',           g: 0.25, density: 0.0, R: 9.5, gravAlt: 2.678, atmoAlt: 0 },
+  { id: 'europa', name: 'Europa',         g: 0.25, density: 1.0, R: 9.5, gravAlt: 3.15,  atmoAlt: 1.15 },
+  { id: 'titan',  name: 'Titan',          g: 0.25, density: 1.0, R: 9.5, gravAlt: 3.0,   atmoAlt: 0.6 },
   { id: 'space',  name: 'Deep space (0 g)', g: 0.00, density: 0.0 },
   { id: 'custom', name: 'Custom…',        g: 1.00, density: 1.0 },
 ];
@@ -84,6 +86,7 @@ export const CATEGORIES = [
   { id: 'storage',   name: 'Cargo & Tanks' },
   { id: 'control',   name: 'Control & Comms' },
   { id: 'tools',     name: 'Tools & Production' },
+  { id: 'weapons',   name: 'Weapons' },
   { id: 'conveyor',  name: 'Conveyors' },
   { id: 'mech',      name: 'Mechanical' },
   { id: 'misc',      name: 'Utility & Interior' },
@@ -92,7 +95,7 @@ export const CATEGORIES = [
 
 export const CAT_COLORS = {
   armor: 0x8b949e, thrust: 0xf0883e, power: 0xe3b341, storage: 0x3fb950,
-  control: 0x58a6ff, tools: 0xdb61a2, conveyor: 0xd4a72c, mech: 0xa371f7, misc: 0x6e7681, custom: 0x39c5cf,
+  control: 0x58a6ff, tools: 0xdb61a2, conveyor: 0xd4a72c, weapons: 0xf85149, mech: 0xa371f7, misc: 0x6e7681, custom: 0x39c5cf,
 };
 
 // ---------------------------------------------------------------------------
@@ -112,6 +115,14 @@ B('HeavyArmor',        'Heavy Armor Block',        'armor', 'cube',      { s:[1,
 B('HeavyArmorSlope',   'Heavy Armor Slope',        'armor', 'slope',     { s:[1,1,1], m:1650, approx:1 }, { s:[1,1,1], m:66, approx:1 }, { heavy:1 });
 B('HeavyArmorCorner',  'Heavy Armor Corner',       'armor', 'corner',    { s:[1,1,1], m:560, approx:1 },  { s:[1,1,1], m:46, approx:1 }, { heavy:1 });
 B('HeavyArmorInvCorner','Heavy Armor Inv. Corner', 'armor', 'invcorner', { s:[1,1,1], m:2800, approx:1 }, { s:[1,1,1], m:86, approx:1 }, { heavy:1 });
+B('LightHalf',         'Light Armor Half Block',   'armor', 'half',      { s:[1,1,1], m:250, approx:1 },  { s:[1,1,1], m:10, approx:1 });
+B('HeavyHalf',         'Heavy Armor Half Block',   'armor', 'half',      { s:[1,1,1], m:1650, approx:1 }, { s:[1,1,1], m:56, approx:1 }, { heavy:1 });
+B('LightSlope2Base',   'Light Armor Slope 2x1 Base','armor','slope2base',{ s:[1,1,1], m:380, approx:1 },  { s:[1,1,1], m:20, approx:1 });
+B('LightSlope2Tip',    'Light Armor Slope 2x1 Tip', 'armor','slope2tip', { s:[1,1,1], m:140, approx:1 },  { s:[1,1,1], m:20, approx:1 });
+B('HeavySlope2Base',   'Heavy Armor Slope 2x1 Base','armor','slope2base',{ s:[1,1,1], m:2510, approx:1 }, { s:[1,1,1], m:86, approx:1 }, { heavy:1 });
+B('HeavySlope2Tip',    'Heavy Armor Slope 2x1 Tip', 'armor','slope2tip', { s:[1,1,1], m:736, approx:1 },  { s:[1,1,1], m:46, approx:1 }, { heavy:1 });
+B('LightPanel',        'Light Armor Panel',        'armor', 'panel',     { s:[1,1,1], m:125, approx:1 },  { s:[1,1,1], m:5, approx:1 });
+B('HeavyPanel',        'Heavy Armor Panel',        'armor', 'panel',     { s:[1,1,1], m:825, approx:1 },  { s:[1,1,1], m:28, approx:1 }, { heavy:1 });
 
 // Thrusters -----------------------------------------------------------------
 B('IonS',      'Ion Thruster',                 'thrust', 'thruster',
@@ -147,6 +158,7 @@ B('ReactorS',  'Small Reactor',   'power', 'box', { s:[1,1,1], m:4793, pOut:15, 
 B('ReactorL',  'Large Reactor',   'power', 'box', { s:[3,3,3], m:72295, pOut:300, fuelInv:8000, approx:1 }, { s:[3,3,3], m:3901, pOut:14.75, fuelInv:1000 });
 B('Battery',   'Battery',         'power', 'box', { s:[1,1,1], m:3845, pOut:12, store:3 },     { s:[3,2,3], m:1040.4, pOut:4, store:1 });
 B('BatteryS',  'Small Battery',   'power', 'box', null,                                         { s:[1,1,1], m:146.4, pOut:0.2, store:0.05, approx:1 });
+B('Solar',     'Solar Panel',     'power', 'solar', { s:[4,2,1], m:516.8, pOut:0.16, solar:1, approx:1 }, { s:[5,10,1], m:143.2, pOut:0.04, solar:1 });
 B('H2Engine',  'Hydrogen Engine', 'power', 'box', { s:[1,1,2], m:3253.8, pOut:5 },             { s:[3,2,2], m:1005.2, pOut:0.5 });
 
 // Storage -------------------------------------------------------------------
@@ -175,7 +187,12 @@ B('Antenna',   'Antenna',                'control', 'box', { s:[1,6,2], m:3481.6
 B('Beacon',    'Beacon',                 'control', 'box', { s:[1,2,1], m:3481.6, approx:1 },{ s:[1,1,2], m:52.2, approx:1 });
 B('Camera',    'Camera',                 'control', 'box', { s:[1,1,1], m:40.6, approx:1 }, { s:[1,1,1], m:40.6, approx:1 });
 B('Sensor',    'Sensor',                 'control', 'box', { s:[1,1,1], m:158.2, approx:1 },{ s:[1,1,1], m:158.2, approx:1 });
-B('JumpDrive', 'Jump Drive',             'control', 'box', { s:[3,3,2], m:35980 },          null);
+B('JumpDrive', 'Jump Drive',             'control', 'box', { s:[3,3,2], m:35980, jump:{ km:2000, massKg:1250000, MWh:3 } }, null);
+B('JumpProto', 'Prototech Jump Drive',   'control', 'box', { s:[3,3,3], m:54400, jump:{ km:6000, massKg:2500000, MWh:12 } }, { s:[3,3,4], m:5184, jump:{ km:500, massKg:120000, MWh:2 } });
+B('LaserAnt',  'Laser Antenna',          'control', 'box', { s:[1,2,1], m:3584, approx:1 },  { s:[3,3,3], m:666, approx:1 });
+B('OreDet',    'Ore Detector',           'control', 'box', { s:[1,1,2], m:1570, approx:1 },  { s:[1,1,2], m:105.2, approx:1 });
+B('FlightSeat','Passenger Seat',         'control', 'box', { s:[1,1,1], m:220, approx:1 },   { s:[3,3,3], m:220, approx:1 });
+B('LCD',       'LCD Panel',              'control', 'panel', { s:[1,1,1], m:120, approx:1 }, { s:[3,3,1], m:59.8, approx:1 });
 
 // Tools & production ----------------------------------------------------------
 B('Drill',     'Drill',                  'tools', 'box', { s:[1,1,3], m:6741, invOre:23437.5 }, { s:[3,3,6], m:1004.2, invOre:3375 });
@@ -186,8 +203,24 @@ B('Refinery',  'Refinery',               'tools', 'box', { s:[2,4,2], m:25208, a
 B('Assembler', 'Assembler',              'tools', 'box', { s:[1,1,2], m:3560, approx:1 },   null);
 B('Medical',   'Medical Room',           'tools', 'box', { s:[2,1,2], m:4257, approx:1 },   null);
 
+// Weapons ---------------------------------------------------------------------
+B('GatTurret', 'Gatling Turret',         'weapons', 'turret', { s:[3,3,3], m:1428 },           { s:[5,5,5], m:692 });
+B('RktTurret', 'Rocket Turret',          'weapons', 'turret', { s:[3,3,3], m:1286, approx:1 }, { s:[5,5,5], m:894 });
+B('IntTurret', 'Interior Turret',        'weapons', 'turret', { s:[1,1,1], m:311 },            null);
+B('AsltTurret','Assault Cannon Turret',  'weapons', 'turret', { s:[3,2,3], m:9654 },           null);
+B('AutoTurret','Autocannon Turret',      'weapons', 'turret', null,                            { s:[5,4,5], m:870 });
+B('GatGun',    'Gatling Gun',            'weapons', 'gun',    null,                            { s:[1,1,4], m:140, approx:1 });
+B('RktLauncher','Rocket Launcher',       'weapons', 'gun',    { s:[1,1,2], m:1713.8, approx:1 },{ s:[1,1,4], m:226.2, approx:1 });
+B('Warhead',   'Warhead',                'weapons', 'box',    { s:[1,1,1], m:500.4, approx:1 }, { s:[1,1,1], m:46.2, approx:1 });
+B('Decoy',     'Decoy',                  'weapons', 'box',    { s:[1,1,1], m:126.4, approx:1 }, { s:[1,1,1], m:50.2, approx:1 });
+
 // Mechanical ------------------------------------------------------------------
-B('LandingGear','Landing Gear',          'mech', 'box', { s:[1,2,3], m:3324, approx:1 },    { s:[1,2,3], m:97, approx:1 });
+B('LandingGear','Landing Gear',          'mech', 'gear', { s:[1,2,3], m:3324, approx:1 },   { s:[1,2,3], m:97, approx:1 });
+B('Wheel1',    'Wheel Suspension 1x1 (with wheel)','mech','wheel', { s:[2,1,1], m:1382, approx:1 }, { s:[2,1,1], m:353, approx:1 });
+B('Wheel3',    'Wheel Suspension 3x3 (with wheel)','mech','wheel', { s:[2,3,3], m:1552, approx:1 }, { s:[2,3,3], m:453, approx:1 });
+B('Wheel5',    'Wheel Suspension 5x5 (with wheel)','mech','wheel', { s:[2,5,5], m:3580, approx:1 }, { s:[2,5,5], m:790, approx:1 });
+B('Parachute', 'Parachute Hatch',        'mech', 'box', { s:[1,1,1], m:472.4, chute:100000 }, { s:[1,1,1], m:84.2, chute:10000 });
+B('ArtMass',   'Artificial Mass',        'mech', 'box', { s:[1,1,1], m:9544, approx:1 },    { s:[1,1,1], m:906.4, approx:1 });
 B('Merge',     'Merge Block',            'mech', 'box', { s:[1,1,1], m:473.4, approx:1 },   { s:[1,3,3], m:152.2, approx:1 });
 B('Rotor',     'Rotor (base)',           'mech', 'box', { s:[1,2,1], m:576.4, approx:1 },   { s:[1,2,1], m:168.2, approx:1 });
 B('Piston',    'Piston (base)',          'mech', 'box', { s:[1,2,1], m:576.4, approx:1 },   { s:[1,2,1], m:176.2, approx:1 });
@@ -207,6 +240,9 @@ B('SorterM',   'Conveyor Sorter (large ports)','conveyor','box', null,          
 B('Light',     'Interior Light',         'misc', 'box', { s:[1,1,1], m:28, approx:1 },      { s:[1,1,1], m:28, approx:1 });
 B('Window',    'Window 1x1',             'misc', 'box', { s:[1,1,1], m:116, approx:1 },     null);
 B('Door',      'Door',                   'misc', 'box', { s:[1,1,1], m:582.4, approx:1 },   null);
+B('AirVent',   'Air Vent',               'misc', 'box', { s:[1,1,1], m:1871, approx:1 },    { s:[1,1,1], m:253, approx:1 });
+B('O2Farm',    'Oxygen Farm',            'misc', 'box', { s:[3,1,1], m:3024, approx:1 },    null);
+B('Cryo',      'Cryo Chamber',           'misc', 'box', { s:[1,1,1], m:692, approx:1 },     null);
 
 
 // ---------------------------------------------------------------------------
@@ -245,6 +281,13 @@ const PORTS = {
   Refinery:    { L: ['-xL@0.0.0', '+xL@1.0.1', '-zL@1.0.0', '+zL@0.0.1'] },
   Assembler:   { L: ['-zL', '+zL', '-xL@0.0.0', '+xL@0.0.1'] },
   ConvJunc:    { L: ['*L'], S: ['*S'] },
+  GatTurret:   { L: ['-yL'], S: ['-yL'] },
+  RktTurret:   { L: ['-yL'], S: ['-yL'] },
+  AsltTurret:  { L: ['-yL'] },
+  AutoTurret:  { S: ['-yS'] },
+  GatGun:      { S: ['+zS'] },
+  RktLauncher: { L: ['+zL'], S: ['+zS'] },
+  Parachute:   { L: ['-yL'], S: ['-yS'] },
   ConvTube:    { L: ['-zL', '+zL'], S: ['-zS', '+zS'] },
   ConvCurve:   { L: ['-zL', '+yL'], S: ['-zS', '+yS'] },
   ConvHubSG:   { S: ['*L'] },
@@ -285,6 +328,7 @@ const ROLES = {
   CockpitSG: 'cockpit', Fighter: 'cockpit', CockpitLG: 'cockpit',
   Drill: 'drill', Welder: 'welder', Grinder: 'grinder', Collector: 'collector',
   Refinery: 'refinery', Assembler: 'assembler',
+  GatTurret: 'weapon', RktTurret: 'weapon', AsltTurret: 'weapon', AutoTurret: 'weapon', GatGun: 'weapon', RktLauncher: 'weapon', Parachute: 'chute',
 };
 
 // Flatten into a lookup:  id = `${grid}_${key}`
@@ -302,6 +346,8 @@ for (const r of RAW) {
       thrust: spec.thrust || null, pOut: spec.pOut || 0, store: spec.store || 0,
       h2: spec.h2 || 0, o2: spec.o2 || 0,
       ports: parsePorts(PORTS[r.key] && PORTS[r.key][grid], spec.s),
+      gyro: r.key === 'Gyro' ? (grid === 'L' ? 3.36e7 : 4.48e5) : 0,     // max torque (N·m)
+      jump: spec.jump || null, chute: spec.chute || 0, gear: r.key === 'LandingGear' || r.key.startsWith('Wheel'),
       role: ROLES[r.key] || (spec.thrust && spec.thrust.type === 'hydrogen' ? 'h2thrust' : null),
     };
   }
